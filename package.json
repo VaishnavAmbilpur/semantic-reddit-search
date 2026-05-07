@@ -10,7 +10,6 @@
     "postinstall": "prisma generate"
   },  
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.0.0",
     "@upstash/qstash": "^2.10.1",
     "@upstash/redis": "^1.38.0",
