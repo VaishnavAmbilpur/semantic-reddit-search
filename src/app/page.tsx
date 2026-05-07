@@ -1,9 +1,19 @@
-// ... existing imports ...
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// ... existing SearchResult interface ...
+interface SearchResult {
+  id: string;
+  type: string;
+  title: string | null;
+  content: string | null;
+  url: string;
+  upvotes: number;
+  author: string;
+  redditCreatedAt: string;
+  subreddit: string;
+  similarity: number;
+}
 
 const SearchInputUI = ({ 
   compact, 
