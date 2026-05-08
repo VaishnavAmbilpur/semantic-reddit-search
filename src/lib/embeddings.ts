@@ -53,12 +53,12 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
           throw new Error(`Jina API error ${response.status}: ${errorText}`);
         }
 
-        const data = await response.json();
-        const vectors = data.data.map((item: any) => item.embedding);
+        const data = await response.json() as { data: { embedding: number[] }[] };
+        const vectors = data.data.map((item) => item.embedding);
         allVectors.push(...vectors);
         break; // Success
 
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (retries >= MAX_RETRIES) throw error;
         retries++;
         await sleep(5000 * retries);

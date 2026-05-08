@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface SearchResult {
@@ -15,6 +15,17 @@ interface SearchResult {
   similarity: number;
 }
 
+interface SearchInputProps {
+  compact?: boolean;
+  query: string;
+  setQuery: (q: string) => void;
+  onSearch: (e?: React.FormEvent, overrideParams?: { q?: string; sort?: string; type?: string; dateRange?: string }) => void;
+  loading: boolean;
+  showSuggestions: boolean;
+  setShowSuggestions: (show: boolean) => void;
+  suggestions: string[];
+}
+
 const SearchInputUI = ({ 
   compact, 
   query, 
@@ -24,7 +35,7 @@ const SearchInputUI = ({
   showSuggestions, 
   setShowSuggestions, 
   suggestions 
-}: any) => (
+}: SearchInputProps) => (
   <form onSubmit={onSearch} className={`relative w-full ${compact ? 'max-w-3xl' : 'max-w-2xl'}`}>
     <div className={`relative flex items-center bg-white border border-neutral-300 hover:border-neutral-400 focus-within:shadow-md focus-within:border-neutral-900 transition-all ${compact ? 'rounded-full px-4 py-1.5 shadow-sm' : 'rounded-full px-6 py-3 shadow-md'}`}>
       <div className={`${compact ? 'text-neutral-900' : 'text-neutral-400'}`}>
@@ -54,7 +65,7 @@ const SearchInputUI = ({
 
     {!compact && showSuggestions && suggestions.length > 0 && (
       <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-neutral-200 rounded-2xl shadow-xl overflow-hidden z-50 py-2">
-        {suggestions.map((s: string, i: number) => (
+        {suggestions.map((s, i) => (
           <button type="button" key={i} onClick={() => { setQuery(s); onSearch(undefined, { q: s }); }} className="w-full text-left px-6 py-3 text-[15px] text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors flex items-center gap-3">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-neutral-400"><circle cx="11" cy="11" r="8" strokeWidth="2"/><path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round"/></svg>
             {s}
@@ -65,7 +76,7 @@ const SearchInputUI = ({
   </form>
 );
 
-export default function Home() {
+function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -95,7 +106,7 @@ export default function Home() {
   }, []);
 
   // Search Logic
-  const onSearch = useCallback(async (e?: React.FormEvent, overrideParams?: any) => {
+  const onSearch = useCallback(async (e?: React.FormEvent, overrideParams?: { q?: string; sort?: string; type?: string; dateRange?: string }) => {
     e?.preventDefault();
     const q = overrideParams?.q || query;
     if (!q.trim() || q.length < 2) return;
@@ -127,8 +138,14 @@ export default function Home() {
     }
   }, [query, sort, type, dateRange, selectedSubs, router]);
 
+  // Handle initial search from URL
   useEffect(() => {
-    if (searchParams.get("q")) onSearch();
+    const q = searchParams.get("q");
+    if (q) {
+      // Small timeout to avoid setState in effect warning if needed, 
+      // but wrapping in a check is usually enough.
+      onSearch(undefined, { q });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -146,8 +163,6 @@ export default function Home() {
     }, 300);
     return () => clearTimeout(timer);
   }, [query, hasSearched]);
-
-  // Removed old internal SearchInput definition
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -240,13 +255,13 @@ export default function Home() {
                   </div>
                 ) : results.length === 0 ? (
                   <div className="py-20 text-center">
-                    <h3 className="text-[18px] font-semibold text-neutral-900 mb-2">No results found for "{query}"</h3>
+                    <h3 className="text-[18px] font-semibold text-neutral-900 mb-2">No results found for &quot;{query}&quot;</h3>
                     <p className="text-[15px] text-neutral-500">Make sure all words are spelled correctly, or try more general keywords.</p>
                   </div>
                 ) : (
                   <div className="space-y-8 pb-20">
                     {results.map((r) => (
-                      <a key={r.id} href={r.url} target="_blank" rel="noopener" className="block group">
+                      <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" className="block group">
                         {/* URL / Subreddit Context */}
                         <div className="flex items-center gap-2.5 mb-1.5">
                           <div className="w-7 h-7 bg-neutral-100 rounded-full flex items-center justify-center text-[13px] font-bold text-neutral-600">
@@ -257,7 +272,7 @@ export default function Home() {
                               reddit.com/r/{r.subreddit}
                             </span>
                             <span className="text-[11px] text-neutral-500 line-clamp-1">
-                              u/{r.author} • {new Date(r.redditCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric'})}
+                              u/{r.author} &bull; {new Date(r.redditCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric'})}
                             </span>
                           </div>
                         </div>
@@ -347,5 +362,17 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-8 h-8 border-4 border-neutral-200 border-t-neutral-900 rounded-full animate-spin"></div>
+      </div>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }

@@ -6,9 +6,9 @@ export async function GET(req: Request) {
   const q = searchParams.get('q');
   const minUpvotes = Number(searchParams.get('minUpvotes') ?? 0);
   const limit = Math.min(Number(searchParams.get('limit') ?? 20), 50);
-  const sort = (searchParams.get('sort') as any) || 'relevance';
-  const type = (searchParams.get('type') as any) || 'all';
-  const dateRange = (searchParams.get('dateRange') as any) || 'all';
+  const sort = (searchParams.get('sort') as 'relevance' | 'top') || 'relevance';
+  const type = (searchParams.get('type') as 'post' | 'comment' | 'all') || 'all';
+  const dateRange = (searchParams.get('dateRange') as 'week' | 'month' | 'year' | 'all') || 'all';
   const subreddits = searchParams.get('subreddits')?.split(',').filter(Boolean) || [];
 
   if (!q || q.length < 2) {
@@ -26,9 +26,9 @@ export async function GET(req: Request) {
     return Response.json({ results: data, cached: true, queryTime: Date.now() - start });
   }
 
-  // Run semantic search
   const results = await semanticSearch(q, filters);
-  await setCachedResults(key, results);
+  const queryTime = Date.now() - start;
+  await setCachedResults(key, { results, queryTime });
 
-  return Response.json({ results, cached: false, queryTime: Date.now() - start });
+  return Response.json({ results, cached: false, queryTime });
 }

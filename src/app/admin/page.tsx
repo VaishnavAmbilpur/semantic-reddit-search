@@ -1,12 +1,19 @@
 "use client";
 import { useState, useEffect } from "react";
 
+interface IndexingJob {
+  id: string;
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
+  chunksCompleted: number;
+  subreddit: { name: string };
+}
+
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [subredditInput, setSubredditInput] = useState("");
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<IndexingJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
 

@@ -10,6 +10,19 @@ export interface SearchFilters {
   dateRange?: 'week' | 'month' | 'year' | 'all';
 }
 
+export interface SearchResult {
+  id: string;
+  type: 'post' | 'comment';
+  title: string | null;
+  content: string | null;
+  url: string;
+  upvotes: number;
+  author: string;
+  redditCreatedAt: string;
+  subreddit: string;
+  similarity: number;
+}
+
 export async function semanticSearch(query: string, filters: SearchFilters = {}) {
   const vector = await generateQueryEmbedding(query);
   const vecStr = `[${vector.join(',')}]`;
@@ -24,7 +37,7 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
   let dateFilter = '';
   if (dateRange !== 'all') {
     const now = new Date();
-    let startDate = new Date();
+    const startDate = new Date();
     if (dateRange === 'week') startDate.setDate(now.getDate() - 7);
     else if (dateRange === 'month') startDate.setMonth(now.getMonth() - 1);
     else if (dateRange === 'year') startDate.setFullYear(now.getFullYear() - 1);
@@ -35,7 +48,7 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
   // Ensures $4 is always referenced in the SQL query so Postgres knows its type.
   const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
 
-  const results: any[] = await prisma.$queryRawUnsafe(`
+  const results: SearchResult[] = await prisma.$queryRawUnsafe(`
     WITH results AS (
       ${(type === 'all' || type === 'post') ? `
       (
