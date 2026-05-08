@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   description: "Search Reddit by meaning, not just keywords.",
 };
 
+
 export default function RootLayout({
   children,
 }: Readonly<{
