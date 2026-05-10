@@ -10,6 +10,7 @@ export interface ArcticPost {
   author: string;
   over_18: boolean;
   created_utc: number;
+  subreddit: string; // ← ADD THIS
 }
 
 export interface ArcticComment {
@@ -59,4 +60,64 @@ export async function fetchComments(postId: string, limit = 100): Promise<Arctic
   
   if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
   return data.data ?? [];
+}
+
+/**
+ * Search posts across ALL of Reddit using a text query.
+ * Unlike fetchPosts() which requires a specific subreddit name,
+ * this uses Arctic Shift's q= parameter to search globally.
+ *
+ * Used by the live search lane on every query.
+ */
+export async function searchPostsGlobal(
+  query: string,
+  limit = 20,
+  afterTimestamp?: number
+): Promise<ArcticPost[]> {
+  const params = new URLSearchParams({
+    q:     query,
+    limit: String(limit),
+    sort:  'relevance',
+    type:  'link',
+    t:     'all',
+  });
+
+  const url = `https://www.reddit.com/search.json?${params}`;
+  console.log(`[LiveSearch] Fetching from Reddit: ${url}`);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 Redex/1.0 (Search Engine project)'
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Reddit] Search failed: ${res.status}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const children = data?.data?.children || [];
+
+    return children.map((c: any) => ({
+      id:           c.data.id,
+      title:        c.data.title,
+      selftext:     c.data.selftext || null,
+      permalink:    c.data.permalink,
+      score:        c.data.score,
+      num_comments: c.data.num_comments,
+      author:       c.data.author,
+      over_18:      c.data.over_18,
+      created_utc:  c.data.created_utc,
+      subreddit:    c.data.subreddit,
+    })).filter(
+      (p: ArcticPost) => !p.over_18 && p.selftext !== '[removed]'
+    );
+
+  } catch (err) {
+    console.warn('[Reddit] Search error:', err);
+    return [];
+  }
 }

@@ -1,34 +1,120 @@
-import { semanticSearch } from '@/lib/search';
+// src/app/api/search/route.ts
+import { semanticSearch, mergeAndRank } from '@/lib/search';
+import { fetchAndScoreLivePosts } from '@/lib/liveSearch';
+import { generateQueryEmbedding } from '@/lib/embeddings';
 import { getCacheKey, getCachedResults, setCachedResults } from '@/lib/cache';
+import { qstash } from '@/lib/qstash';
+import { prisma } from '@/lib/prisma';
+import { SearchFilters, SearchResult } from '@/lib/search';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get('q');
+  const q          = searchParams.get('q');
   const minUpvotes = Number(searchParams.get('minUpvotes') ?? 0);
-  const limit = Math.min(Number(searchParams.get('limit') ?? 20), 50);
-  const sort = (searchParams.get('sort') as 'relevance' | 'top') || 'relevance';
-  const type = (searchParams.get('type') as 'post' | 'comment' | 'all') || 'all';
-  const dateRange = (searchParams.get('dateRange') as 'week' | 'month' | 'year' | 'all') || 'all';
+  const limit      = Math.min(Number(searchParams.get('limit') ?? 40), 100);
+  const sort       = (searchParams.get('sort') as 'relevance' | 'top') || 'relevance';
+  const type       = (searchParams.get('type') as 'post' | 'comment' | 'all') || 'all';
+  const dateRange  = (searchParams.get('dateRange') as 'week' | 'month' | 'year' | 'all') || 'all';
   const subreddits = searchParams.get('subreddits')?.split(',').filter(Boolean) || [];
 
   if (!q || q.length < 2) {
-    return Response.json({ error: 'Query too short (min 2 chars)' }, { status: 400 });
+    return Response.json({ error: 'Query too short' }, { status: 400 });
   }
 
   const filters = { minUpvotes, limit, sort, type, dateRange, subreddits };
-  const key = getCacheKey(q, filters);
+  const cacheKey = getCacheKey(q, filters);
   const start = Date.now();
 
-  // Check cache first
-  const cached = await getCachedResults(key);
+  // 1. Check Cache
+  const cached = await getCachedResults(cacheKey);
   if (cached) {
-    const data = typeof cached === 'string' ? JSON.parse(cached) : cached;
-    return Response.json({ results: data, cached: true, queryTime: Date.now() - start });
+    const data = typeof cached === 'string' ? JSON.parse(cached) : (cached as any);
+    // data is { results: SearchResult[], queryTime: number }
+    return Response.json({ 
+      results: data.results, 
+      cached: true, 
+      queryTime: data.queryTime || (Date.now() - start) 
+    });
   }
 
-  const results = await semanticSearch(q, filters);
+  // 2. Embed query ONCE for both lanes
+  const queryVector = await generateQueryEmbedding(q);
+
+  // 3. Run lanes in parallel
+  // We skip live search if specific subreddits are requested or if searching ONLY comments
+  const shouldRunLive = subreddits.length === 0 && type !== 'comment';
+
+  const [dbResults, liveResults] = await Promise.all([
+    semanticSearchWithVector(q, queryVector, filters),
+    shouldRunLive ? fetchAndScoreLivePosts(q, queryVector, filters) : Promise.resolve([]),
+  ]);
+
+  // 4. Merge and Rank
+  const results = mergeAndRank(dbResults, liveResults, limit, sort);
   const queryTime = Date.now() - start;
-  await setCachedResults(key, { results, queryTime });
+
+  // 5. Cache results
+  await setCachedResults(cacheKey, { results, queryTime });
+
+  // 6. Background: Persist live results to DB via QStash
+  if (shouldRunLive && liveResults.length > 0) {
+    void qstash.publishJSON({
+      url: `${process.env.APP_URL}/api/worker/persist-live`,
+      body: {
+        query: q,
+        livePosts: liveResults.map(r => ({
+          id: r.id,
+          title: r.title,
+          content: r.content,
+          url: r.url,
+          upvotes: r.upvotes,
+          author: r.author,
+          subreddit: r.subreddit,
+          redditCreatedAt: r.redditCreatedAt,
+          similarity: r.similarity,
+        })),
+      },
+    }).catch(err => console.warn('[search] QStash trigger failed:', err));
+  }
 
   return Response.json({ results, cached: false, queryTime });
+}
+
+// Helper: Performs the DB vector search using an existing query vector
+async function semanticSearchWithVector(
+  query: string,
+  queryVector: number[],
+  filters: SearchFilters
+): Promise<SearchResult[]> {
+  const vecStr = `[${queryVector.join(',')}]`;
+  const { limit = 20, minUpvotes = 0, sort = 'relevance', subreddits = [], type = 'all', dateRange = 'all' } = filters;
+
+  let dateFilter = '';
+  if (dateRange !== 'all') {
+    const startDate = new Date();
+    if (dateRange === 'week') startDate.setDate(new Date().getDate() - 7);
+    if (dateRange === 'month') startDate.setMonth(new Date().getMonth() - 1);
+    if (dateRange === 'year') startDate.setFullYear(new Date().getFullYear() - 1);
+    dateFilter = `AND "redditCreatedAt" >= '${startDate.toISOString()}'`;
+  }
+
+  const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
+
+  return await prisma.$queryRawUnsafe(`
+    WITH results AS (
+      ${(type === 'all' || type === 'post') ? `
+      (SELECT p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p.author, p."redditCreatedAt", s.name as subreddit, 1 - (p.embedding <=> $1::vector) as similarity, false as "isLive"
+       FROM "Post" p JOIN "Subreddit" s ON p."subredditId" = s.id
+       WHERE p.embedding IS NOT NULL AND p.upvotes >= $2 ${dateFilter} ${subFilter})` : ''}
+      ${type === 'all' ? 'UNION ALL' : ''}
+      ${(type === 'all' || type === 'comment') ? `
+      (SELECT c.id, 'comment' as type, null as title, c.content, p.url, c.upvotes, c.author, c."redditCreatedAt", s.name as subreddit, 1 - (c.embedding <=> $1::vector) as similarity, false as "isLive"
+       FROM "Comment" c JOIN "Post" p ON c."postId" = p.id JOIN "Subreddit" s ON p."subredditId" = s.id
+       WHERE c.embedding IS NOT NULL AND c.upvotes >= $2 ${dateFilter} ${subFilter})` : ''}
+    )
+    SELECT * FROM results 
+    WHERE similarity >= 0.35
+    ORDER BY upvotes DESC, "redditCreatedAt" DESC, similarity DESC
+    LIMIT $3
+  `, vecStr, minUpvotes, limit, subreddits);
 }

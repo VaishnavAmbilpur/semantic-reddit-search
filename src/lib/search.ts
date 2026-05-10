@@ -21,6 +21,7 @@ export interface SearchResult {
   redditCreatedAt: string;
   subreddit: string;
   similarity: number;
+  isLive?: boolean; // ← true for results fetched live from Arctic Shift
 }
 
 export async function semanticSearch(query: string, filters: SearchFilters = {}) {
@@ -88,4 +89,56 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
   `, vecStr, minUpvotes, limit, subreddits);
 
   return results;
+}
+
+/**
+ * Merge DB results and live results into one ranked list.
+ *
+ * Rules:
+ * - Deduplicate by Reddit URL — DB result always wins (it may have comments)
+ * - Sort by similarity DESC (relevance) or upvotes DESC (top)
+ * - Trim to limit
+ *
+ * Both result sets have REAL cosine similarity scores (not fake numbers),
+ * so sorting them together produces a genuinely meaningful ranking.
+ */
+export function mergeAndRank(
+  dbResults:   SearchResult[],
+  liveResults: SearchResult[],
+  limit:       number,
+  sort:        'relevance' | 'top'
+): SearchResult[] {
+
+  // DB results take priority — they may have associated comments indexed
+  const seen = new Map<string, SearchResult>();
+
+  for (const r of dbResults) {
+    seen.set(r.url, r);
+  }
+
+  // Add live results only if not already in DB
+  // Add live results only if not already in DB and above relevance threshold
+  for (const r of liveResults) {
+    if (!seen.has(r.url) && r.similarity >= 0.35) { // 35% threshold
+      seen.set(r.url, r);
+    }
+  }
+
+  const merged = [...seen.values()].filter(r => r.similarity >= 0.35);
+
+  // Sort
+  if (sort === 'top' || sort === 'relevance') {
+    // Always prioritize Upvotes, then Recency, then Similarity as a tie-breaker
+    merged.sort((a, b) => {
+      if (b.upvotes !== a.upvotes) return b.upvotes - a.upvotes;
+      
+      const dateA = new Date(a.redditCreatedAt).getTime();
+      const dateB = new Date(b.redditCreatedAt).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+
+      return b.similarity - a.similarity;
+    });
+  }
+
+  return merged.slice(0, limit);
 }

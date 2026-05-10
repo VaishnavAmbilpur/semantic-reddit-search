@@ -13,6 +13,7 @@ interface SearchResult {
   redditCreatedAt: string;
   subreddit: string;
   similarity: number;
+  isLive: boolean;
 }
 
 interface SearchInputProps {
@@ -97,6 +98,7 @@ function SearchPageContent() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [meta, setMeta] = useState<{ time: number; cached: boolean } | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState("Scouring Reddit archives...");
 
   // Initial Data
   useEffect(() => {
@@ -163,6 +165,27 @@ function SearchPageContent() {
     }, 300);
     return () => clearTimeout(timer);
   }, [query, hasSearched]);
+
+  // Loading Status Logic
+  useEffect(() => {
+    if (!loading) return;
+    
+    const messages = [
+      "Scouring Reddit archives...",
+      "Fetching global communities...",
+      "Embedding results with Jina AI...",
+      "Computing semantic relevance...",
+      "Finalizing ranking..."
+    ];
+    
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % messages.length;
+      setLoadingStatus(messages[i]);
+    }, 800);
+    
+    return () => clearInterval(interval);
+  }, [loading]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -240,7 +263,12 @@ function SearchPageContent() {
                 </div>
 
                 {loading ? (
-                  <div className="space-y-6">
+                  <div className="space-y-8">
+                    <div className="flex items-center gap-3 text-neutral-500 font-medium animate-in fade-in slide-in-from-bottom-2">
+                      <div className="w-5 h-5 border-2 border-neutral-300 border-t-neutral-900 rounded-full animate-spin"></div>
+                      <span className="text-[15px]">{loadingStatus}</span>
+                    </div>
+
                     {[1,2,3,4].map(i => (
                       <div key={i} className="animate-pulse">
                         <div className="flex items-center gap-2 mb-2">
@@ -291,9 +319,33 @@ function SearchPageContent() {
                         
                         {/* Tags */}
                         <div className="mt-2 flex gap-3 text-[12px] font-medium">
-                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{(r.similarity*100).toFixed(0)}% Match</span>
+                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                            {(r.similarity*100).toFixed(0)}% Match
+                          </span>
+
+                          {/* NEW: Source Badges */}
+                          {r.isLive ? (
+                            <span 
+                              title="Fetched live from Reddit — being saved to index"
+                              className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded flex items-center gap-1 cursor-help"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block animate-pulse" />
+                              Live
+                            </span>
+                          ) : (
+                            <span 
+                              title="From semantic index — instant recall"
+                              className="text-violet-700 bg-violet-50 px-2 py-0.5 rounded flex items-center gap-1 cursor-help"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
+                              Indexed
+                            </span>
+                          )}
+
                           <span className="text-neutral-500 flex items-center gap-1">👍 {r.upvotes}</span>
-                          {r.type === 'comment' && <span className="text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">Comment</span>}
+                          {r.type === 'comment' && (
+                            <span className="text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">Comment</span>
+                          )}
                         </div>
                       </a>
                     ))}
