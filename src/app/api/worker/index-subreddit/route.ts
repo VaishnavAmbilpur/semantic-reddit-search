@@ -92,6 +92,7 @@ export async function POST(req: Request) {
     await qstash.publishJSON({
       url: `${process.env.APP_URL}/api/worker/index-subreddit`,
       body: { jobId, subredditId, subredditName, beforeTimestamp: oldestTimestamp },
+      delay: 15, // ← NEW: Wait 15s to stay under Token-Per-Minute limit
     });
   } else {
     const finalCheck = await prisma.indexingJob.findUnique({ where: { id: jobId } });

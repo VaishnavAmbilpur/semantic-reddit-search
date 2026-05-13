@@ -73,6 +73,7 @@ export async function GET(req: Request) {
             subreddit: r.subreddit,
             redditCreatedAt: r.redditCreatedAt,
             similarity: r.similarity,
+            embedding: r.embedding, // ← RECYCLE: Pass the AI result
           })),
         },
       }).catch(err => console.warn('[search] QStash trigger failed:', err));

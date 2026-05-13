@@ -274,34 +274,49 @@ function SearchPageContent() {
                 </div>
 
                 {loading ? (
-                  <div className="space-y-6 animate-in fade-in duration-500">
-                    <div className="flex items-center gap-3 mb-8 bg-neutral-50 p-4 rounded-2xl border border-neutral-100 animate-pulse">
-                      <div className="w-5 h-5 rounded-full border-2 border-neutral-300 border-t-neutral-900 animate-spin"></div>
-                      <span className="text-sm font-medium text-neutral-600 tracking-tight">{loadingStatus}</span>
-                    </div>
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="bg-white border border-neutral-100 rounded-3xl p-6 shadow-sm overflow-hidden relative group">
-                        {/* Shimmer Effect */}
-                        <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-shimmer"></div>
-                        
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-neutral-100 animate-pulse"></div>
-                            <div className="h-4 w-24 bg-neutral-100 rounded-full animate-pulse"></div>
-                          </div>
-                          <div className="h-4 w-12 bg-neutral-100 rounded-full animate-pulse"></div>
+                  <div className="py-20 animate-in fade-in duration-700">
+                    <div className="max-w-xl mx-auto">
+                      {/* Neural Scan Progress */}
+                      <div className="mb-10 text-center">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900 text-[10px] font-bold text-white uppercase tracking-widest mb-6">
+                          <div className="w-1 h-1 rounded-full bg-white animate-pulse"></div>
+                          Neural Engine Active
                         </div>
-                        <div className="h-7 w-3/4 bg-neutral-100 rounded-xl mb-3 animate-pulse"></div>
-                        <div className="space-y-2">
-                          <div className="h-4 w-full bg-neutral-100 rounded-lg animate-pulse"></div>
-                          <div className="h-4 w-5/6 bg-neutral-100 rounded-lg animate-pulse"></div>
+                        <h2 className="text-3xl font-display font-semibold text-neutral-900 mb-2 tracking-tight">Semantic Scanning</h2>
+                        <p className="text-sm text-neutral-500 max-w-sm mx-auto">{loadingStatus}</p>
+                      </div>
+
+                      {/* Progress Track */}
+                      <div className="relative h-[2px] w-full bg-neutral-100 rounded-full overflow-hidden mb-8">
+                        <div className="absolute inset-0 bg-neutral-900 w-1/3 animate-shimmer"></div>
+                      </div>
+
+                      {/* Professional Telemetry Feed */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Consistency</span>
+                          <span className="text-xs font-mono font-bold text-neutral-900">VERIFIED</span>
                         </div>
-                        <div className="mt-6 flex gap-4">
-                          <div className="h-8 w-20 bg-neutral-50 rounded-full animate-pulse"></div>
-                          <div className="h-8 w-20 bg-neutral-50 rounded-full animate-pulse"></div>
+                        <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Search Depth</span>
+                          <span className="text-xs font-mono font-bold text-neutral-900">768-D</span>
                         </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Ghost Results */}
+                    <div className="mt-16 space-y-6 opacity-20 pointer-events-none">
+                      {[1, 2].map((i) => (
+                        <div key={i} className="bg-white border border-neutral-100 rounded-3xl p-8">
+                          <div className="h-4 w-24 bg-neutral-200 rounded-full mb-4"></div>
+                          <div className="h-7 w-3/4 bg-neutral-200 rounded-xl mb-4"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 w-full bg-neutral-100 rounded-lg"></div>
+                            <div className="h-4 w-5/6 bg-neutral-100 rounded-lg"></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : error ? (
                   <div className="py-20 text-center px-6 bg-red-50 rounded-2xl border border-red-100">

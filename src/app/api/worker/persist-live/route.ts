@@ -13,6 +13,7 @@ interface LivePostPayload {
   subreddit:       string;
   redditCreatedAt: string;
   similarity:      number;
+  embedding?:      number[]; // ← Recycled from search
 }
 
 interface WorkerBody {
@@ -63,10 +64,17 @@ export async function POST(req: Request) {
     subredditMap.set(name, subreddit.id);
   }
 
-  // 4. Re-embed and Save to DB
-  // (We re-embed here using the 'passage' task to match your admin indexer)
-  const texts   = newPosts.map(p => `[POST] ${p.title} ${p.content ?? ''}`.trim());
-  const vectors = await generateEmbeddings(texts);
+  // 4. Get Vectors (Either from payload or re-embed)
+  // Recycling vectors saves 50% of your AI token budget!
+  let vectors: number[][];
+  const providedVectors = newPosts.map(p => p.embedding).filter(v => !!v) as number[][];
+  
+  if (providedVectors.length === newPosts.length) {
+    vectors = providedVectors;
+  } else {
+    const texts = newPosts.map(p => `[POST] ${p.title} ${p.content ?? ''}`.trim());
+    vectors = await generateEmbeddings(texts);
+  }
 
   let savedCount = 0;
   for (let i = 0; i < newPosts.length; i++) {

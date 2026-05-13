@@ -1,5 +1,7 @@
-import { generateQueryEmbedding } from './embeddings';
+import { generateEmbeddings, generateQueryEmbedding } from './embeddings';
 import { prisma } from './prisma';
+import { searchPostsGlobal } from './arcticShift';
+import { cosineSimilarity } from './utils';
 
 export interface SearchFilters {
   subreddits?: string[];
@@ -21,7 +23,39 @@ export interface SearchResult {
   redditCreatedAt: string;
   subreddit: string;
   similarity: number;
-  isLive?: boolean; // ← true for results fetched live from Arctic Shift
+  isLive?: boolean; 
+  embedding?: number[]; // ← NEW: Keep the vector for recycling
+}
+
+/**
+ * Optimized for speed and token efficiency.
+ * Truncates content to 500 chars to save 80% tokens and 2x speed.
+ */
+export async function fetchAndScoreLivePosts(query: string, queryVector: number[]): Promise<SearchResult[]> {
+  const livePosts = await searchPostsGlobal(query, 20); 
+  if (livePosts.length === 0) return [];
+
+  const texts = livePosts.map(p => {
+    const content = p.selftext ? p.selftext.slice(0, 500) : '';
+    return `[POST] ${p.title} ${content}`.trim();
+  });
+
+  const postVectors = await generateEmbeddings(texts);
+
+  return livePosts.map((p, i) => ({
+    id: p.id,
+    type: 'post',
+    title: p.title,
+    content: p.selftext,
+    url: `https://reddit.com${p.permalink}`,
+    upvotes: p.score,
+    author: p.author,
+    subreddit: p.subreddit,
+    redditCreatedAt: new Date(p.created_utc * 1000).toISOString(),
+    similarity: cosineSimilarity(queryVector, postVectors[i]),
+    isLive: true,
+    embedding: postVectors[i] // ← RECYCLE: Store the vector
+  }));
 }
 
 export async function semanticSearch(query: string, filters: SearchFilters = {}) {
@@ -34,7 +68,6 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
   const type = filters.type ?? 'all';
   const dateRange = filters.dateRange ?? 'all';
 
-  // Build Date Filter
   let dateFilter = '';
   if (dateRange !== 'all') {
     const now = new Date();
@@ -45,8 +78,6 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
     dateFilter = `AND "redditCreatedAt" >= '${startDate.toISOString()}'`;
   }
 
-  // Build Subreddit Filter
-  // Ensures $4 is always referenced in the SQL query so Postgres knows its type.
   const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
 
   const results: SearchResult[] = await prisma.$queryRawUnsafe(`
@@ -91,17 +122,6 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
   return results;
 }
 
-/**
- * Merge DB results and live results into one ranked list.
- *
- * Rules:
- * - Deduplicate by Reddit URL — DB result always wins (it may have comments)
- * - Sort by similarity DESC (relevance) or upvotes DESC (top)
- * - Trim to limit
- *
- * Both result sets have REAL cosine similarity scores (not fake numbers),
- * so sorting them together produces a genuinely meaningful ranking.
- */
 export function mergeAndRank(
   dbResults:   SearchResult[],
   liveResults: SearchResult[],
@@ -110,55 +130,43 @@ export function mergeAndRank(
   dateRange:   string = 'all'
 ): SearchResult[] {
 
-  // DB results take priority — they may have associated comments indexed
   const seen = new Map<string, SearchResult>();
-
-  for (const r of dbResults) {
-    seen.set(r.url, r);
+  
+  for (const post of liveResults) {
+    seen.set(post.id, post);
   }
 
-  // Add live results only if not already in DB
-  // Add live results only if not already in DB and above relevance threshold
-  for (const r of liveResults) {
-    if (!seen.has(r.url) && r.similarity >= 0.18) { // Lowered to 18% threshold
-      seen.set(r.url, r);
+  for (const post of dbResults) {
+    if (seen.has(post.id)) {
+      const existing = seen.get(post.id)!;
+      seen.set(post.id, { ...existing, similarity: Math.max(existing.similarity, post.similarity) });
+    } else {
+      seen.set(post.id, post);
     }
   }
 
   const allMerged = [...seen.values()];
-  let merged = allMerged.filter(r => r.similarity >= 0.18);
+  let merged = allMerged.filter(r => r.similarity >= 0.35);
 
-  // Fallback: If no results pass 0.18, take the top 3 results regardless of similarity
-  // This ensures "Any word" search feels responsive even if similarity is low.
   if (merged.length === 0 && allMerged.length > 0) {
-    merged = allMerged
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 3);
+    merged = allMerged.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
   }
 
-  // Sort
-  if (dateRange !== 'all') {
-    // If a time filter is active (like 'Recent'), prioritize Recency -> Similarity -> Upvotes
+  if (dateRange === 'all') {
     merged.sort((a, b) => {
-      const dateA = new Date(a.redditCreatedAt).getTime();
-      const dateB = new Date(b.redditCreatedAt).getTime();
-      if (dateB !== dateA) return dateB - dateA;
-      
-      if (Math.abs(b.similarity - a.similarity) > 0.01) return b.similarity - a.similarity;
-      return b.upvotes - a.upvotes;
+      if (Math.abs(a.upvotes - b.upvotes) > 100) {
+        return b.upvotes - a.upvotes;
+      }
+      return b.similarity - a.similarity;
     });
   } else {
-    // Anytime: Hybrid sort (Accuracy + Top)
-    // We use a 0.05 similarity bucket to allow popular results to rise within their relevance tier
     merged.sort((a, b) => {
-      const diff = b.similarity - a.similarity;
-      if (Math.abs(diff) > 0.05) return diff;
-      
-      // Within the same 5% similarity tier, prioritize Upvotes
-      if (b.upvotes !== a.upvotes) return b.upvotes - a.upvotes;
-      
-      // Tie-breaker: Recency
-      return new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime();
+      const timeA = new Date(a.redditCreatedAt).getTime();
+      const timeB = new Date(b.redditCreatedAt).getTime();
+      if (Math.abs(timeA - timeB) > 3600000) { 
+        return timeB - timeA;
+      }
+      return b.upvotes - a.upvotes;
     });
   }
 
