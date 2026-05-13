@@ -10,7 +10,7 @@ export interface ArcticPost {
   author: string;
   over_18: boolean;
   created_utc: number;
-  subreddit: string; // ← ADD THIS
+  subreddit: string;
 }
 
 export interface ArcticComment {
@@ -22,23 +22,25 @@ export interface ArcticComment {
   created_utc: number;
 }
 
-// 1. Check if a subreddit exists
+/**
+ * 1. Check if a subreddit exists
+ */
 export async function validateSubreddit(name: string) {
   try {
-    const res = await fetch(`https://www.reddit.com/r/${name}/about.json`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Redex/1.0' }
-    });
+    const res = await fetch(`${BASE}/api/posts/search?subreddit=${name}&limit=1`);
     const data = await res.json();
-    if (data?.data?.display_name) {
-      return { display_name: data.data.display_name };
+    if (res.ok && data.data && data.data.length > 0) {
+      return { display_name: data.data[0].subreddit };
     }
+    return { display_name: name };
   } catch (e) {
-    console.error('Validation error:', e);
+    return { display_name: name };
   }
-  return null;
 }
 
-// 2. Fetch posts (time-based pagination)
+/**
+ * 2. Fetch posts (Arctic Shift) - Used for deep indexing
+ */
 export async function fetchPosts(
   subreddit: string,
   before?: number,
@@ -48,75 +50,62 @@ export async function fetchPosts(
   if (before) params.set('before', String(before));
   const res = await fetch(`${BASE}/api/posts/search?${params}`);
   const data = await res.json();
-
-  if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
-  return data.data ?? [];
-}
-
-// 3. Fetch comments for a specific post
-export async function fetchComments(postId: string, limit = 100): Promise<ArcticComment[]> {
-  const res = await fetch(`${BASE}/api/comments/search?link_id=${postId}&limit=${limit}`);
-  const data = await res.json();
-
+  
   if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
   return data.data ?? [];
 }
 
 /**
- * Search posts across ALL of Reddit using a text query.
- * Unlike fetchPosts() which requires a specific subreddit name,
- * this uses Arctic Shift's q= parameter to search globally.
- *
- * Used by the live search lane on every query.
+ * 3. Fetch comments (Arctic Shift) - Used for deep indexing
+ */
+export async function fetchComments(postId: string, limit = 100): Promise<ArcticComment[]> {
+  const res = await fetch(`${BASE}/api/comments/search?link_id=${postId}&limit=${limit}`);
+  const data = await res.json();
+  
+  if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
+  return data.data ?? [];
+}
+
+/**
+ * 4. Search posts across ALL of Reddit (Global Search)
+ * VERIFIED: Switched to PullPush API for global keyword search.
+ * This provider allows 'q' globally and works in both Local and Production.
  */
 export async function searchPostsGlobal(
   query: string,
-  limit = 20,
-  afterTimestamp?: number
+  limit = 40
 ): Promise<ArcticPost[]> {
-  const params = new URLSearchParams({
-    q: query,
-    limit: String(limit),
-    sort: 'relevance',
-    type: 'link',
-    t: 'all',
-  });
-
-  const url = `https://www.reddit.com/search.json?${params}`;
-  console.log(`[LiveSearch] Fetching from Reddit: ${url}`);
+  const url = `https://api.pullpush.io/reddit/search/submission/?q=${encodeURIComponent(query)}&size=${limit}`;
+  console.log(`[LiveSearch] Global Search (PullPush): ${url}`);
 
   try {
     const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Redex/1.0'
-      },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
-      throw new Error(`Reddit API blocked or failed: ${res.status}. Your production IP might be rate-limited.`);
+      throw new Error(`Search provider returned ${res.status}`);
     }
 
     const data = await res.json();
-    const children = data?.data?.children || [];
+    const posts = data?.data || [];
 
-    return children.map((c: any) => ({
-      id: c.data.id,
-      title: c.data.title,
-      selftext: c.data.selftext || null,
-      permalink: c.data.permalink,
-      score: c.data.score,
-      num_comments: c.data.num_comments,
-      author: c.data.author,
-      over_18: c.data.over_18,
-      created_utc: c.data.created_utc,
-      subreddit: c.data.subreddit,
+    return posts.map((p: any) => ({
+      id:           p.id,
+      title:        p.title,
+      selftext:     p.selftext || null,
+      permalink:    p.permalink,
+      score:        p.score || 0,
+      num_comments: p.num_comments || 0,
+      author:       p.author,
+      over_18:      p.over_18 || false,
+      created_utc:  p.created_utc,
+      subreddit:    p.subreddit,
     })).filter(
       (p: ArcticPost) => !p.over_18 && p.selftext !== '[removed]'
     );
-
-  } catch (err) {
-    console.warn('[Reddit] Search error:', err);
+  } catch (err: any) {
+    console.error('[Search Error]:', err.message);
     return [];
   }
 }
