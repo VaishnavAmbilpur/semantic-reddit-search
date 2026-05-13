@@ -125,7 +125,16 @@ export function mergeAndRank(
     }
   }
 
-  const merged = [...seen.values()].filter(r => r.similarity >= 0.18);
+  const allMerged = [...seen.values()];
+  let merged = allMerged.filter(r => r.similarity >= 0.18);
+
+  // Fallback: If no results pass 0.18, take the top 3 results regardless of similarity
+  // This ensures "Any word" search feels responsive even if similarity is low.
+  if (merged.length === 0 && allMerged.length > 0) {
+    merged = allMerged
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 3);
+  }
 
   // Sort
   if (dateRange !== 'all') {

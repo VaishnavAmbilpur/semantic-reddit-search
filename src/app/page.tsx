@@ -102,6 +102,7 @@ function SearchPageContent() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [meta, setMeta] = useState<{ time: number; cached: boolean } | null>(null);
   const [loadingStatus, setLoadingStatus] = useState("Scouring Reddit archives...");
+  const [error, setError] = useState<string | null>(null);
 
   // Initial Data
   useEffect(() => {
@@ -134,9 +135,16 @@ function SearchPageContent() {
     try {
       const res = await fetch(`/api/search?${params.toString()}`);
       const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.details || data.error || 'Search failed');
+      }
+
       setResults(data.results || []);
       setMeta({ time: data.queryTime, cached: data.cached });
-    } catch (err) {
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
       setResults([]);
     } finally {
       setLoading(false);
@@ -283,6 +291,20 @@ function SearchPageContent() {
                         <div className="h-3 w-2/3 bg-neutral-100 rounded"></div>
                       </div>
                     ))}
+                  </div>
+                ) : error ? (
+                  <div className="py-20 text-center px-6 bg-red-50 rounded-2xl border border-red-100">
+                    <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <h3 className="text-[18px] font-semibold text-red-900 mb-2">Search Error</h3>
+                    <p className="text-[15px] text-red-700 max-w-md mx-auto">{error}</p>
+                    <button 
+                      onClick={() => onSearch()}
+                      className="mt-6 text-[14px] font-bold text-red-600 hover:text-red-800 transition-colors"
+                    >
+                      Try Again
+                    </button>
                   </div>
                 ) : results.length === 0 ? (
                   <div className="py-20 text-center">

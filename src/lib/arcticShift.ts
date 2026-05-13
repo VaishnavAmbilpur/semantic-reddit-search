@@ -94,8 +94,7 @@ export async function searchPostsGlobal(
     });
 
     if (!res.ok) {
-      console.warn(`[Reddit] Search failed: ${res.status}`);
-      return [];
+      throw new Error(`Reddit API blocked or failed: ${res.status}. Your production IP might be rate-limited.`);
     }
 
     const data = await res.json();
