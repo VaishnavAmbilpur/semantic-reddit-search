@@ -23,7 +23,7 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
         const batch = texts.slice(i, i + BATCH_SIZE);
         let retries = 0;
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 5;
 
         while (retries <= MAX_RETRIES) {
             try {
@@ -45,8 +45,9 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
                     const errorText = await response.text();
                     if (response.status === 429 && retries < MAX_RETRIES) {
                         retries++;
-                        const waitTime = 5000 * retries; // 5s, 10s, 15s
-                        console.log(`⏳ Jina rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
+                        // Exponential backoff: 5s, 10s, 20s, 40s, 60s
+                        const waitTime = Math.pow(2, retries - 1) * 5000; 
+                        console.warn(`[Jina] Rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
                         await sleep(waitTime);
                         continue;
                     }
@@ -82,7 +83,7 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
  */
 export async function generateQueryEmbedding(query: string): Promise<number[]> {
     let retries = 0;
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 5;
 
     while (retries <= MAX_RETRIES) {
         try {
@@ -104,8 +105,9 @@ export async function generateQueryEmbedding(query: string): Promise<number[]> {
                 const errorText = await response.text();
                 if (response.status === 429 && retries < MAX_RETRIES) {
                     retries++;
-                    const waitTime = 2000 * retries;
-                    console.log(`⏳ Jina query rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
+                    // Faster retries for query since it's blocking the UI
+                    const waitTime = Math.pow(2, retries - 1) * 2000; 
+                    console.warn(`[Jina Query] Rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
                     await sleep(waitTime);
                     continue;
                 }

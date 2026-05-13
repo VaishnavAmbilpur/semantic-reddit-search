@@ -182,18 +182,18 @@ function SearchPageContent() {
     if (!loading) return;
     
     const messages = [
-      "Scouring Reddit archives...",
-      "Fetching global communities...",
-      "Embedding results with Jina AI...",
-      "Computing semantic relevance...",
-      "Finalizing ranking..."
+      "Analyzing semantic intent...",
+      "Querying Reddit archives...",
+      "Rank-scoring threads...",
+      "Applying hybrid popularity filters...",
+      "Optimizing result accuracy..."
     ];
     
     let i = 0;
     const interval = setInterval(() => {
       i = (i + 1) % messages.length;
       setLoadingStatus(messages[i]);
-    }, 800);
+    }, 1500);
     
     return () => clearInterval(interval);
   }, [loading]);
@@ -274,21 +274,32 @@ function SearchPageContent() {
                 </div>
 
                 {loading ? (
-                  <div className="space-y-8">
-                    <div className="flex items-center gap-3 text-neutral-500 font-medium animate-in fade-in slide-in-from-bottom-2">
-                      <div className="w-5 h-5 border-2 border-neutral-300 border-t-neutral-900 rounded-full animate-spin"></div>
-                      <span className="text-[15px]">{loadingStatus}</span>
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center gap-3 mb-8 bg-neutral-50 p-4 rounded-2xl border border-neutral-100 animate-pulse">
+                      <div className="w-5 h-5 rounded-full border-2 border-neutral-300 border-t-neutral-900 animate-spin"></div>
+                      <span className="text-sm font-medium text-neutral-600 tracking-tight">{loadingStatus}</span>
                     </div>
-
-                    {[1,2,3,4].map(i => (
-                      <div key={i} className="animate-pulse">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-6 h-6 bg-neutral-100 rounded-full"></div>
-                          <div className="h-3 w-24 bg-neutral-100 rounded"></div>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="bg-white border border-neutral-100 rounded-3xl p-6 shadow-sm overflow-hidden relative group">
+                        {/* Shimmer Effect */}
+                        <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-shimmer"></div>
+                        
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-neutral-100 animate-pulse"></div>
+                            <div className="h-4 w-24 bg-neutral-100 rounded-full animate-pulse"></div>
+                          </div>
+                          <div className="h-4 w-12 bg-neutral-100 rounded-full animate-pulse"></div>
                         </div>
-                        <div className="h-5 w-3/4 bg-neutral-200 rounded mb-2"></div>
-                        <div className="h-3 w-full bg-neutral-100 rounded mb-1"></div>
-                        <div className="h-3 w-2/3 bg-neutral-100 rounded"></div>
+                        <div className="h-7 w-3/4 bg-neutral-100 rounded-xl mb-3 animate-pulse"></div>
+                        <div className="space-y-2">
+                          <div className="h-4 w-full bg-neutral-100 rounded-lg animate-pulse"></div>
+                          <div className="h-4 w-5/6 bg-neutral-100 rounded-lg animate-pulse"></div>
+                        </div>
+                        <div className="mt-6 flex gap-4">
+                          <div className="h-8 w-20 bg-neutral-50 rounded-full animate-pulse"></div>
+                          <div className="h-8 w-20 bg-neutral-50 rounded-full animate-pulse"></div>
+                        </div>
                       </div>
                     ))}
                   </div>
