@@ -106,7 +106,8 @@ export function mergeAndRank(
   dbResults:   SearchResult[],
   liveResults: SearchResult[],
   limit:       number,
-  sort:        'relevance' | 'top'
+  sort:        'relevance' | 'top',
+  dateRange:   string = 'all'
 ): SearchResult[] {
 
   // DB results take priority — they may have associated comments indexed
@@ -119,24 +120,36 @@ export function mergeAndRank(
   // Add live results only if not already in DB
   // Add live results only if not already in DB and above relevance threshold
   for (const r of liveResults) {
-    if (!seen.has(r.url) && r.similarity >= 0.35) { // 35% threshold
+    if (!seen.has(r.url) && r.similarity >= 0.18) { // Lowered to 18% threshold
       seen.set(r.url, r);
     }
   }
 
-  const merged = [...seen.values()].filter(r => r.similarity >= 0.35);
+  const merged = [...seen.values()].filter(r => r.similarity >= 0.18);
 
   // Sort
-  if (sort === 'top' || sort === 'relevance') {
-    // Always prioritize Upvotes, then Recency, then Similarity as a tie-breaker
+  if (dateRange !== 'all') {
+    // If a time filter is active (like 'Recent'), prioritize Recency -> Similarity -> Upvotes
     merged.sort((a, b) => {
-      if (b.upvotes !== a.upvotes) return b.upvotes - a.upvotes;
-      
       const dateA = new Date(a.redditCreatedAt).getTime();
       const dateB = new Date(b.redditCreatedAt).getTime();
       if (dateB !== dateA) return dateB - dateA;
-
-      return b.similarity - a.similarity;
+      
+      if (Math.abs(b.similarity - a.similarity) > 0.01) return b.similarity - a.similarity;
+      return b.upvotes - a.upvotes;
+    });
+  } else {
+    // Anytime: Hybrid sort (Accuracy + Top)
+    // We use a 0.05 similarity bucket to allow popular results to rise within their relevance tier
+    merged.sort((a, b) => {
+      const diff = b.similarity - a.similarity;
+      if (Math.abs(diff) > 0.05) return diff;
+      
+      // Within the same 5% similarity tier, prioritize Upvotes
+      if (b.upvotes !== a.upvotes) return b.upvotes - a.upvotes;
+      
+      // Tie-breaker: Recency
+      return new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime();
     });
   }
 

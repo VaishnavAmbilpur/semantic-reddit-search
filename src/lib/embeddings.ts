@@ -81,24 +81,45 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
  * Separated from indexing to use the correct Jina task type for better results.
  */
 export async function generateQueryEmbedding(query: string): Promise<number[]> {
-    const response = await fetch('https://api.jina.ai/v1/embeddings', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${process.env.JINA_API_KEY}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: 'jina-embeddings-v3',
-            input: [query.slice(0, 8000)],
-            dimensions: 768,
-            task: 'retrieval.query', // Optimized for search queries (different from passage!)
-        }),
-    });
+    let retries = 0;
+    const MAX_RETRIES = 3;
 
-    if (!response.ok) {
-        throw new Error(`Jina API error: ${response.status}`);
+    while (retries <= MAX_RETRIES) {
+        try {
+            const response = await fetch('https://api.jina.ai/v1/embeddings', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.JINA_API_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'jina-embeddings-v3',
+                    input: [query.slice(0, 8000)],
+                    dimensions: 768,
+                    task: 'retrieval.query',
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                if (response.status === 429 && retries < MAX_RETRIES) {
+                    retries++;
+                    const waitTime = 2000 * retries;
+                    console.log(`⏳ Jina query rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
+                    await sleep(waitTime);
+                    continue;
+                }
+                throw new Error(`Jina API error ${response.status}: ${errorText}`);
+            }
+
+            const data = await response.json();
+            return data.data[0].embedding;
+
+        } catch (error: unknown) {
+            if (retries >= MAX_RETRIES) throw error;
+            retries++;
+            await sleep(2000 * retries);
+        }
     }
-
-    const data = await response.json();
-    return data.data[0].embedding;
+    throw new Error('Failed to generate query embedding after retries');
 }

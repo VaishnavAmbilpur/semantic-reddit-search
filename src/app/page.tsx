@@ -46,7 +46,10 @@ const SearchInputUI = ({
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => !compact && query.length >= 2 && setShowSuggestions(true)}
+        onFocus={(e) => {
+          e.target.select();
+          !compact && query.length >= 2 && setShowSuggestions(true);
+        }}
         placeholder="Ask anything..."
         className={`flex-1 w-full bg-transparent border-none outline-none text-neutral-900 placeholder:text-neutral-400 ml-3 ${compact ? 'text-[15px]' : 'text-[18px]'}`}
       />
@@ -356,24 +359,12 @@ function SearchPageContent() {
               {/* Right Column: Advanced Filters */}
               <div className="w-full lg:w-[240px] shrink-0 space-y-6 hidden lg:block">
                 <div>
-                  <h4 className="text-[13px] font-bold uppercase tracking-wider text-neutral-400 mb-3">Sort by</h4>
-                  <div className="flex flex-col gap-1.5">
-                    {[{id: 'relevance', label: 'Relevance'}, {id: 'top', label: 'Top Upvotes'}].map(opt => (
-                      <button 
-                        key={opt.id} 
-                        onClick={() => {setSort(opt.id); onSearch(undefined, {sort: opt.id});}} 
-                        className={`text-left text-[14px] px-3 py-2 rounded-lg transition-colors ${sort === opt.id ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:bg-neutral-50'}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
                   <h4 className="text-[13px] font-bold uppercase tracking-wider text-neutral-400 mb-3">Time Range</h4>
                   <div className="flex flex-col gap-1.5">
-                    {[{id: 'all', label: 'Any time'}, {id: 'year', label: 'Past year'}, {id: 'month', label: 'Past month'}, {id: 'week', label: 'Past week'}].map(opt => (
+                    {[
+                      { id: 'all', label: 'Any time' },
+                      { id: 'week', label: 'Recent' }
+                    ].map(opt => (
                       <button 
                         key={opt.id} 
                         onClick={() => {setDateRange(opt.id); onSearch(undefined, {dateRange: opt.id});}} 
@@ -384,30 +375,6 @@ function SearchPageContent() {
                     ))}
                   </div>
                 </div>
-
-                {subreddits.length > 0 && (
-                  <div>
-                    <h4 className="text-[13px] font-bold uppercase tracking-wider text-neutral-400 mb-3">Subreddits</h4>
-                    <div className="flex flex-col gap-1.5">
-                      {subreddits.map(sub => (
-                        <label key={sub.name} className="flex items-center gap-3 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer">
-                          <input 
-                            type="checkbox"
-                            checked={selectedSubs.includes(sub.name)}
-                            onChange={() => {
-                              const newSubs = selectedSubs.includes(sub.name) 
-                                ? selectedSubs.filter(s => s !== sub.name)
-                                : [...selectedSubs, sub.name];
-                              setSelectedSubs(newSubs);
-                            }}
-                            className="w-4 h-4 text-neutral-900 rounded border-neutral-300 focus:ring-neutral-900 accent-neutral-900"
-                          />
-                          <span className="text-[14px] text-neutral-700">r/{sub.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>

@@ -8,60 +8,61 @@ datasource db {
 }
 
 model Subreddit {
-  id          String   @id @default(cuid())
-  name        String   @unique  // e.g. "cscareerquestions"
+  id          String        @id @default(cuid())
+  name        String        @unique
   displayName String
   description String?
   subscribers Int?
   lastIndexed DateTime?
-  createdAt   DateTime @default(now())
-
-  posts Post[]
-  jobs  IndexingJob[]
+  createdAt   DateTime      @default(now())
+  jobs        IndexingJob[]
+  posts       Post[]
 }
 
 model Post {
-  id              String   @id @default(cuid())
-  redditId        String   @unique  // Reddit's own ID, e.g. "t3_abc123"
+  id              String                 @id @default(cuid())
+  redditId        String                 @unique
   title           String
-  content         String?  @db.Text
+  content         String?
   url             String
-  upvotes         Int      @default(0)
-  commentCount    Int      @default(0)
+  upvotes         Int                    @default(0)
+  commentCount    Int                    @default(0)
   subredditId     String
   author          String
-  isNsfw          Boolean  @default(false)
+  isNsfw          Boolean                @default(false)
   redditCreatedAt DateTime
-  indexedAt       DateTime @default(now())
-
-  subreddit Subreddit @relation(fields: [subredditId], references: [id])
-  comments  Comment[]
+  indexedAt       DateTime               @default(now())
+  embedding       Unsupported("vector")?
+  comments        Comment[]
+  subreddit       Subreddit              @relation(fields: [subredditId], references: [id])
 
   @@index([subredditId])
   @@index([upvotes])
   @@index([redditCreatedAt])
+  @@index([embedding], map: "posts_embedding_idx")
 }
 
 model Comment {
-  id        String   @id @default(cuid())
-  redditId  String   @unique
-  content   String   @db.Text
-  upvotes   Int      @default(0)
-  author    String
-  postId    String
+  id              String                 @id @default(cuid())
+  redditId        String                 @unique
+  content         String
+  upvotes         Int                    @default(0)
+  author          String
+  postId          String
+  indexedAt       DateTime               @default(now())
   redditCreatedAt DateTime
-  indexedAt       DateTime @default(now())
-
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  embedding       Unsupported("vector")?
+  post            Post                   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([upvotes])
+  @@index([embedding], map: "comments_embedding_idx")
 }
 
 model IndexingJob {
   id              String    @id @default(cuid())
   subredditId     String
-  qstashMessageId String?   // stored for deduplication
+  qstashMessageId String?
   status          JobStatus @default(PENDING)
   totalChunks     Int?
   chunksCompleted Int       @default(0)
@@ -70,8 +71,7 @@ model IndexingJob {
   errorMessage    String?
   startedAt       DateTime  @default(now())
   completedAt     DateTime?
-
-  subreddit Subreddit @relation(fields: [subredditId], references: [id])
+  subreddit       Subreddit @relation(fields: [subredditId], references: [id])
 
   @@index([status])
 }

@@ -88,7 +88,7 @@ export async function searchPostsGlobal(
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 Redex/1.0 (Search Engine project)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Redex/1.0'
       },
       signal: AbortSignal.timeout(5000),
     });
