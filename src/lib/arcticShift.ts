@@ -48,7 +48,7 @@ export async function fetchPosts(
   if (before) params.set('before', String(before));
   const res = await fetch(`${BASE}/api/posts/search?${params}`);
   const data = await res.json();
-  
+
   if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
   return data.data ?? [];
 }
@@ -57,7 +57,7 @@ export async function fetchPosts(
 export async function fetchComments(postId: string, limit = 100): Promise<ArcticComment[]> {
   const res = await fetch(`${BASE}/api/comments/search?link_id=${postId}&limit=${limit}`);
   const data = await res.json();
-  
+
   if (data.error) throw new Error(`Arctic Shift Error: ${data.error}`);
   return data.data ?? [];
 }
@@ -75,11 +75,11 @@ export async function searchPostsGlobal(
   afterTimestamp?: number
 ): Promise<ArcticPost[]> {
   const params = new URLSearchParams({
-    q:     query,
+    q: query,
     limit: String(limit),
-    sort:  'relevance',
-    type:  'link',
-    t:     'all',
+    sort: 'relevance',
+    type: 'link',
+    t: 'all',
   });
 
   const url = `https://www.reddit.com/search.json?${params}`;
@@ -101,16 +101,16 @@ export async function searchPostsGlobal(
     const children = data?.data?.children || [];
 
     return children.map((c: any) => ({
-      id:           c.data.id,
-      title:        c.data.title,
-      selftext:     c.data.selftext || null,
-      permalink:    c.data.permalink,
-      score:        c.data.score,
+      id: c.data.id,
+      title: c.data.title,
+      selftext: c.data.selftext || null,
+      permalink: c.data.permalink,
+      score: c.data.score,
       num_comments: c.data.num_comments,
-      author:       c.data.author,
-      over_18:      c.data.over_18,
-      created_utc:  c.data.created_utc,
-      subreddit:    c.data.subreddit,
+      author: c.data.author,
+      over_18: c.data.over_18,
+      created_utc: c.data.created_utc,
+      subreddit: c.data.subreddit,
     })).filter(
       (p: ArcticPost) => !p.over_18 && p.selftext !== '[removed]'
     );
