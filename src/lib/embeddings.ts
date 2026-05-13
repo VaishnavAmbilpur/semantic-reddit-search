@@ -45,9 +45,13 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
                     const errorText = await response.text();
                     if (response.status === 429 && retries < MAX_RETRIES) {
                         retries++;
-                        // Exponential backoff: 5s, 10s, 20s, 40s, 60s
-                        const waitTime = Math.pow(2, retries - 1) * 5000; 
-                        console.warn(`[Jina] Rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
+                        const isConcurrency = errorText.includes('Concurrency');
+                        // For concurrency, we use a random "jitter" to avoid collisions
+                        const waitTime = isConcurrency 
+                            ? (Math.random() * 3000) + 2000 
+                            : Math.pow(2, retries - 1) * 5000;
+
+                        console.warn(`[Jina] ${isConcurrency ? 'Concurrency' : 'Rate'} limit. Retry ${retries}/${MAX_RETRIES} in ${Math.round(waitTime/1000)}s...`);
                         await sleep(waitTime);
                         continue;
                     }
@@ -105,9 +109,13 @@ export async function generateQueryEmbedding(query: string): Promise<number[]> {
                 const errorText = await response.text();
                 if (response.status === 429 && retries < MAX_RETRIES) {
                     retries++;
-                    // Faster retries for query since it's blocking the UI
-                    const waitTime = Math.pow(2, retries - 1) * 2000; 
-                    console.warn(`[Jina Query] Rate limited. Retry ${retries}/${MAX_RETRIES} in ${waitTime / 1000}s...`);
+                    const isConcurrency = errorText.includes('Concurrency');
+                    // Faster random jitter for queries to keep UI snappy
+                    const waitTime = isConcurrency 
+                        ? (Math.random() * 2000) + 1000 
+                        : Math.pow(2, retries - 1) * 2000;
+
+                    console.warn(`[Jina Query] ${isConcurrency ? 'Concurrency' : 'Rate'} limit. Retry ${retries}/${MAX_RETRIES} in ${Math.round(waitTime/1000)}s...`);
                     await sleep(waitTime);
                     continue;
                 }
