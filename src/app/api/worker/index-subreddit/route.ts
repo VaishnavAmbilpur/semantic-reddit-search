@@ -21,22 +21,30 @@ export async function POST(req: Request) {
     return Response.json({ message: 'Job was stopped' });
   }
 
-  // 1. Fetch 50 posts
-  const posts = await fetchPosts(subredditName, beforeTimestamp, 50);
+  // 1. Fetch 20 posts (Reduced from 50 to save tokens)
+  const posts = await fetchPosts(subredditName, beforeTimestamp, 20);
 
   if (posts.length > 0) {
-    // 2. Fetch top 5 comments for each post
+    // 2. Fetch top 3 comments (Reduced from 5 for efficiency)
     const commentsData = await Promise.all(
       posts.map(async (p) => {
-        const comments = await fetchComments(p.id, 5);
+        const comments = await fetchComments(p.id, 3);
         return comments.map(c => ({ ...c, internalPostId: p.id }));
       })
     );
     const allComments = commentsData.flat();
 
     // 3. Prepare all texts for embedding (Posts + Comments)
-    const postTexts = posts.map(p => `[POST] ${p.title} ${p.selftext ?? ''}`);
-    const commentTexts = allComments.map(c => `[COMMENT] ${c.body}`);
+    // TRUNCATION: Save tokens by only embedding the first 500 chars
+    const postTexts = posts.map(p => {
+      const content = p.selftext ? p.selftext.slice(0, 500) : '';
+      return `[POST] ${p.title} ${content}`.trim();
+    });
+    
+    const commentTexts = allComments.map(c => {
+      const body = c.body ? c.body.slice(0, 500) : '';
+      return `[COMMENT] ${body}`.trim();
+    });
     
     // Batch generate embeddings for everything
     const allVectors = await generateEmbeddings([...postTexts, ...commentTexts]);
@@ -86,7 +94,7 @@ export async function POST(req: Request) {
   }
 
   // 7. Chain or Finish
-  const isLastPage = posts.length < 50;
+  const isLastPage = posts.length < 20;
   if (!isLastPage) {
     const oldestTimestamp = Math.min(...posts.map(p => p.created_utc));
     await qstash.publishJSON({

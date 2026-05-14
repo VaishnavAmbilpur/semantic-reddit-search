@@ -1,4 +1,4 @@
-import { fetchAndScoreLivePosts } from '../src/lib/liveSearch';
+import { fetchAndScoreLivePosts } from '../src/lib/search';
 import { generateQueryEmbedding } from '../src/lib/embeddings';
 
 async function test() {
@@ -6,7 +6,7 @@ async function test() {
   console.log(`Searching for "${q}" and scoring similarity...`);
   
   const queryVector = await generateQueryEmbedding(q);
-  const results = await fetchAndScoreLivePosts(q, queryVector, { limit: 10 });
+  const results = await fetchAndScoreLivePosts(q, queryVector);
   
   console.log(`\nFound ${results.length} live results:`);
   results.forEach(r => {

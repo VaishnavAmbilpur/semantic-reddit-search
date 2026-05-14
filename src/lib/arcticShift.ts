@@ -33,7 +33,7 @@ export async function validateSubreddit(name: string) {
       return { display_name: data.data[0].subreddit };
     }
     return { display_name: name };
-  } catch (e) {
+  } catch {
     return { display_name: name };
   }
 }
@@ -66,6 +66,19 @@ export async function fetchComments(postId: string, limit = 100): Promise<Arctic
   return data.data ?? [];
 }
 
+interface PullPushPost {
+  id: string;
+  title: string;
+  selftext?: string;
+  permalink: string;
+  score?: number;
+  num_comments?: number;
+  author: string;
+  over_18?: boolean;
+  created_utc: number;
+  subreddit: string;
+}
+
 /**
  * 4. Search posts across ALL of Reddit (Global Search)
  * VERIFIED: Switched to PullPush API for global keyword search.
@@ -80,7 +93,7 @@ export async function searchPostsGlobal(
 
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) {
@@ -88,9 +101,9 @@ export async function searchPostsGlobal(
     }
 
     const data = await res.json();
-    const posts = data?.data || [];
+    const posts = (data?.data as PullPushPost[]) || [];
 
-    return posts.map((p: any) => ({
+    return posts.map((p) => ({
       id:           p.id,
       title:        p.title,
       selftext:     p.selftext || null,
@@ -102,10 +115,11 @@ export async function searchPostsGlobal(
       created_utc:  p.created_utc,
       subreddit:    p.subreddit,
     })).filter(
-      (p: ArcticPost) => !p.over_18 && p.selftext !== '[removed]'
+      (p: ArcticPost) => p.selftext !== '[removed]'
     );
-  } catch (err: any) {
-    console.error('[Search Error]:', err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Search Error]:', message);
     return [];
   }
 }

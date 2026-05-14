@@ -1,5 +1,5 @@
 import { generateQueryEmbedding } from '../src/lib/embeddings';
-import { fetchAndScoreLivePosts } from '../src/lib/liveSearch';
+import { fetchAndScoreLivePosts } from '../src/lib/search';
 import { mergeAndRank } from '../src/lib/search';
 
 async function simulateSearch() {
@@ -19,7 +19,7 @@ async function simulateSearch() {
     const queryVector = await generateQueryEmbedding(q);
     console.log('Query embedded.');
 
-    const liveResults = await fetchAndScoreLivePosts(q, queryVector, filters);
+    const liveResults = await fetchAndScoreLivePosts(q, queryVector);
     console.log(`Live results found: ${liveResults.length}`);
 
     const results = mergeAndRank([], liveResults, filters.limit, filters.sort);

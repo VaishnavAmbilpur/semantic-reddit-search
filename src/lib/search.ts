@@ -1,4 +1,4 @@
-import { generateEmbeddings, generateQueryEmbedding } from './embeddings';
+import { generateQueryEmbedding, generateSearchEmbeddings } from './embeddings';
 import { prisma } from './prisma';
 import { searchPostsGlobal } from './arcticShift';
 import { cosineSimilarity } from './utils';
@@ -32,15 +32,17 @@ export interface SearchResult {
  * Truncates content to 500 chars to save 80% tokens and 2x speed.
  */
 export async function fetchAndScoreLivePosts(query: string, queryVector: number[]): Promise<SearchResult[]> {
-  const livePosts = await searchPostsGlobal(query, 20); 
+  // 40 posts × ~500-char truncation ≈ 6K tokens per live search — Safe for 4M budget
+  const livePosts = await searchPostsGlobal(query, 40); 
   if (livePosts.length === 0) return [];
 
   const texts = livePosts.map(p => {
-    const content = p.selftext ? p.selftext.slice(0, 500) : '';
+    // 1,000 chars provides better semantic context for long threads
+    const content = p.selftext ? p.selftext.slice(0, 1000) : '';
     return `[POST] ${p.title} ${content}`.trim();
   });
 
-  const postVectors = await generateEmbeddings(texts);
+  const postVectors = await generateSearchEmbeddings(texts);
 
   return livePosts.map((p, i) => ({
     id: p.id,
@@ -146,29 +148,91 @@ export function mergeAndRank(
   }
 
   const allMerged = [...seen.values()];
-  let merged = allMerged.filter(r => r.similarity >= 0.35);
+  
+  // DYNAMIC THRESHOLD:
+  // 1. If upvotes >= 100, we accept 25% similarity (Community Favorites)
+  // 2. Otherwise, we require 30% similarity (Semantic Precision - Loosened for more results)
+  let merged = allMerged.filter(r => {
+    if (r.upvotes >= 100) return r.similarity >= 0.25;
+    return r.similarity >= 0.30;
+  });
 
-  if (merged.length === 0 && allMerged.length > 0) {
-    merged = allMerged.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+  // Fallback: If nothing passes, show top 20 by relevance to avoid empty states
+  if (merged.length < 20 && allMerged.length > 0) {
+    const fallback = allMerged
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 20);
+    
+    // Merge fallback with existing matches, removing duplicates
+    const finalSet = new Map();
+    merged.forEach(m => finalSet.set(m.id, m));
+    fallback.forEach(f => { if (!finalSet.has(f.id)) finalSet.set(f.id, f); });
+    merged = Array.from(finalSet.values());
   }
 
+
   if (dateRange === 'all') {
-    merged.sort((a, b) => {
-      if (Math.abs(a.upvotes - b.upvotes) > 100) {
-        return b.upvotes - a.upvotes;
-      }
-      return b.similarity - a.similarity;
-    });
+    // ANYTIME: Pure top-votes priority. 
+    merged.sort((a, b) => b.upvotes - a.upvotes);
   } else {
+    // RECENT: Group by 4-hour buckets, then sort by upvotes within each bucket.
+    // This gives "Recent + Popular" instead of just "Newest + Random Noise".
+    const FOUR_HOURS = 4 * 60 * 60 * 1000;
     merged.sort((a, b) => {
       const timeA = new Date(a.redditCreatedAt).getTime();
       const timeB = new Date(b.redditCreatedAt).getTime();
-      if (Math.abs(timeA - timeB) > 3600000) { 
-        return timeB - timeA;
+      
+      const bucketA = Math.floor(timeA / FOUR_HOURS);
+      const bucketB = Math.floor(timeB / FOUR_HOURS);
+
+      if (bucketA !== bucketB) {
+        return bucketB - bucketA; // Newest bucket first
       }
-      return b.upvotes - a.upvotes;
+      return b.upvotes - a.upvotes; // Most popular in that bucket
     });
   }
 
   return merged.slice(0, limit);
+}
+
+/**
+ * Performs the DB vector search using an existing query vector.
+ * Shared between search and background workers.
+ */
+export async function semanticSearchWithVector(
+  queryVector: number[],
+  filters: SearchFilters
+): Promise<SearchResult[]> {
+  const vecStr = `[${queryVector.join(',')}]`;
+  const { limit = 20, minUpvotes = 0, subreddits = [], type = 'all', dateRange = 'all' } = filters;
+
+  let dateFilter: (alias: string) => string;
+  if (dateRange !== 'all') {
+    const startDate = new Date();
+    if (dateRange === 'week') startDate.setDate(new Date().getDate() - 7);
+    if (dateRange === 'month') startDate.setMonth(new Date().getMonth() - 1);
+    if (dateRange === 'year') startDate.setFullYear(new Date().getFullYear() - 1);
+    dateFilter = (alias: string) => `AND ${alias}."redditCreatedAt" >= '${startDate.toISOString()}'`;
+  } else {
+    dateFilter = () => '';
+  }
+
+  const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
+
+  return await prisma.$queryRawUnsafe(`
+    WITH results AS (
+      ${(type === 'all' || type === 'post') ? `
+      (SELECT p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p.author, p."redditCreatedAt", s.name as subreddit, 1 - (p.embedding <=> $1::vector) as similarity, false as "isLive"
+       FROM "Post" p JOIN "Subreddit" s ON p."subredditId" = s.id
+       WHERE p.embedding IS NOT NULL AND p.upvotes >= $2 ${dateFilter('p')} ${subFilter})` : ''}
+      ${type === 'all' ? 'UNION ALL' : ''}
+      ${(type === 'all' || type === 'comment') ? `
+      (SELECT c.id, 'comment' as type, null as title, c.content, p.url, c.upvotes, c.author, c."redditCreatedAt", s.name as subreddit, 1 - (c.embedding <=> $1::vector) as similarity, false as "isLive"
+       FROM "Comment" c JOIN "Post" p ON c."postId" = p.id JOIN "Subreddit" s ON p."subredditId" = s.id
+       WHERE c.embedding IS NOT NULL AND c.upvotes >= $2 ${dateFilter('c')} ${subFilter})` : ''}
+    )
+    SELECT * FROM results 
+    ORDER BY upvotes DESC, "redditCreatedAt" DESC, similarity DESC
+    LIMIT $3
+  `, vecStr, minUpvotes, limit, subreddits);
 }

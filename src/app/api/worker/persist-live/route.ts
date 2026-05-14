@@ -98,7 +98,7 @@ export async function POST(req: Request) {
   }
 
   // 5. Trigger Full Subreddit Indexing for discovered subreddits
-  for (const [subredditName, posts] of bySubreddit) {
+  for (const [subredditName] of bySubreddit) {
     const subredditId = subredditMap.get(subredditName);
     if (!subredditId) continue;
 

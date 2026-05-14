@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 interface IndexingJob {
   id: string;
@@ -17,40 +18,45 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
 
+  const fetchJobs = useCallback(async () => {
+    if (!secret) return;
+    try {
+      const res = await fetch("/api/admin/jobs", {
+        headers: { Authorization: `Bearer ${secret}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(data.jobs);
+        setIsAuthenticated(true);
+        localStorage.setItem("redex_admin_secret", secret);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch {
+      setIsAuthenticated(false);
+    }
+    setValidating(false);
+  }, [secret]);
+
   useEffect(() => {
     const saved = localStorage.getItem("redex_admin_secret");
-    if (saved) setSecret(saved);
-    setIsMounted(true);
+    if (saved) setTimeout(() => setSecret(saved), 0);
+    setTimeout(() => setIsMounted(true), 0);
   }, []);
 
   useEffect(() => {
     if (isMounted) {
       if (secret) {
-        setValidating(true);
-        // Small delay to make the "Validating..." text visible for UX
-        const timer = setTimeout(() => fetchJobs(), 600);
+        setTimeout(() => setValidating(true), 0);
+        const timer = setTimeout(() => {
+          fetchJobs();
+        }, 600);
         return () => clearTimeout(timer);
       } else {
-        setIsAuthenticated(false);
+        setTimeout(() => setIsAuthenticated(false), 0);
       }
     }
-  }, [secret, isMounted]);
-
-  const fetchJobs = async () => {
-    if (!secret) return;
-    const res = await fetch("/api/admin/jobs", {
-      headers: { Authorization: `Bearer ${secret}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setJobs(data.jobs);
-      setIsAuthenticated(true);
-      localStorage.setItem("redex_admin_secret", secret);
-    } else {
-      setIsAuthenticated(false);
-    }
-    setValidating(false);
-  };
+  }, [secret, isMounted, fetchJobs]);
 
   const startIndexing = async () => {
     setLoading(true);
@@ -65,7 +71,9 @@ export default function AdminPage() {
         },
         body: JSON.stringify({ name: sub })
       });
-      if (!res.ok) alert(`Failed to start job for r/${sub}. Check if it exists.`);
+      if (!res.ok) {
+        console.error(`Failed to start job for r/${sub}.`);
+      }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
@@ -98,7 +106,7 @@ export default function AdminPage() {
       const interval = setInterval(fetchJobs, 3000);
       return () => clearInterval(interval);
     }
-  }, [jobs, isAuthenticated]);
+  }, [jobs, isAuthenticated, fetchJobs]);
 
   if (!isMounted) return null; // Avoid hydration mismatch
 
@@ -111,9 +119,9 @@ export default function AdminPage() {
           </div>
           <span className="font-display font-semibold text-lg tracking-tight text-neutral-900">Admin Console</span>
         </div>
-        <a href="/" className="text-sm font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
+        <Link href="/" className="text-sm font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
           Back to Search
-        </a>
+        </Link>
       </header>
 
       {/* LOGIN SCREEN */}

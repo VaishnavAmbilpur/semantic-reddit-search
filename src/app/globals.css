@@ -47,13 +47,12 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 .animate-shimmer {
-  animation: shimmer 2s infinite linear;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
 @keyframes slide-up {
@@ -69,4 +68,55 @@ h1, h2, h3, h4, h5, h6 {
 
 .animate-slide-up {
   animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateY(600%); opacity: 0; }
+}
+
+.animate-scan {
+  animation: scan-line 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes radar-ping {
+  0%   { transform: scale(1);   opacity: 0.9; }
+  80%  { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+.animate-radar {
+  animation: radar-ping 1.8s ease-out infinite;
+}
+
+@keyframes word-fade {
+  0%,100% { opacity: 0; transform: translateY(6px); }
+  15%,85% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-word-fade {
+  animation: word-fade 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-bar {
+  0%   { width: 0%;   }
+  30%  { width: 45%;  }
+  60%  { width: 70%;  }
+  85%  { width: 88%;  }
+  100% { width: 96%;  }
+}
+
+.animate-progress {
+  animation: progress-bar 8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes blink-dot {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink-dot 1s step-start infinite;
 }
