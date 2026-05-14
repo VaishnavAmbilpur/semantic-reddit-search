@@ -14,7 +14,6 @@ interface SearchResult {
   subreddit: string;
   similarity: number;
   isLive?: boolean;
-  isHybrid?: boolean; // ← Added for UI feedback
 }
 
 interface SearchInputProps {
@@ -26,8 +25,6 @@ interface SearchInputProps {
   showSuggestions: boolean;
   setShowSuggestions: (show: boolean) => void;
   suggestions: string[];
-  isHybrid: boolean;
-  setIsHybrid: (h: boolean) => void;
   tokensRemaining: number;
   searchesRemaining: number;
 }
