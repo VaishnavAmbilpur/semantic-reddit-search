@@ -22,9 +22,6 @@ interface SearchInputProps {
   setQuery: (q: string) => void;
   onSearch: (e?: React.FormEvent, overrideParams?: { q?: string; sort?: string; type?: string; dateRange?: string; refresh?: boolean }) => void;
   loading: boolean;
-  showSuggestions: boolean;
-  setShowSuggestions: (show: boolean) => void;
-  suggestions: string[];
   tokensRemaining: number;
   searchesRemaining: number;
 }
@@ -35,9 +32,6 @@ const SearchInputUI = ({
   setQuery, 
   onSearch, 
   loading, 
-  showSuggestions, 
-  setShowSuggestions, 
-  suggestions,
   tokensRemaining,
   searchesRemaining
 }: SearchInputProps) => (
@@ -52,13 +46,11 @@ const SearchInputUI = ({
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
-            e.preventDefault(); 
+            e.preventDefault();
+            onSearch(undefined);
           }
         }}
-        onFocus={(e) => {
-          e.target.select();
-          if (!compact && query.length >= 2) setShowSuggestions(true);
-        }}
+        onFocus={(e) => { e.target.select(); }}
         placeholder="Ask anything..."
         className={`flex-1 w-full bg-transparent border-none outline-none text-white placeholder:text-neutral-600 ml-3 ${compact ? 'text-[15px]' : 'text-[18px]'}`}
       />
@@ -104,16 +96,7 @@ const SearchInputUI = ({
       </div>
     )}
 
-    {showSuggestions && suggestions.length > 0 && (
-      <div className="absolute top-full left-0 right-0 mt-3 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-50 py-2">
-        {suggestions.map((s, i) => (
-          <button type="button" key={i} onClick={() => { setQuery(s); onSearch(undefined, { q: s }); }} className="w-full text-left px-6 py-3 text-[15px] text-neutral-400 hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-3">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-neutral-500"><circle cx="11" cy="11" r="8" strokeWidth="2"/><path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round"/></svg>
-            {s}
-          </button>
-        ))}
-      </div>
-    )}
+
   </div>
 );
 
@@ -226,6 +209,12 @@ function SearchPageContent() {
 
   // Core State
   const [query, setQuery] = useState(searchParams.get("q") || "");
+  const queryRef = useRef(searchParams.get("q") || "");
+
+  const setQueryAndRef = useCallback((val: string) => {
+    queryRef.current = val;
+    setQuery(val);
+  }, []);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(!!searchParams.get("q"));
@@ -237,8 +226,6 @@ function SearchPageContent() {
   const [selectedSubs] = useState<string[]>(searchParams.get("subreddits")?.split(",") || []);
   
   // UI State
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [meta, setMeta] = useState<{ time: number; cached: boolean } | null>(null);
   const [loadingStatus, setLoadingStatus] = useState("Scouring Reddit archives...");
   const [error, setError] = useState<string | null>(null);
@@ -306,7 +293,7 @@ function SearchPageContent() {
     e?.preventDefault();
     if (isSearchingRef.current) return;
 
-    const q = (overrideParams?.q || query).trim();
+    const q = (overrideParams?.q || queryRef.current).trim();
     if (!q || q.length < 2) return;
 
     const shouldRefresh = overrideParams?.refresh || false;
@@ -329,7 +316,7 @@ function SearchPageContent() {
     if (searchSig === lastSearchRef.current) return;
 
     // Sync input field
-    if (overrideParams?.q) setQuery(overrideParams.q);
+    if (overrideParams?.q) setQueryAndRef(overrideParams.q);
 
     // TOKEN PROTECTION: Local re-sort if same query (Now handled by client-side filter useEffect)
     // But we still need to handle URL updates for query/refresh
@@ -344,7 +331,6 @@ function SearchPageContent() {
     setLoading(true);
     setHasSearched(true);
     hasSearchedRef.current = true;
-    setShowSuggestions(false);
     lastSearchRef.current = searchSig;
     
     const params = new URLSearchParams({
@@ -397,7 +383,7 @@ function SearchPageContent() {
       setLoading(false);
       isSearchingRef.current = false;
     }
-  }, [query, sort, type, dateRange, selectedSubs, router, addToHistory, deductTokens]);
+  }, [sort, type, dateRange, selectedSubs, router, addToHistory, deductTokens]);
 
   // Client-side Filter/Sort Effect (Saves Tokens)
   useEffect(() => {
@@ -451,7 +437,7 @@ function SearchPageContent() {
       // Browser native back/forward: try to restore from in-memory cache first
       const cachedEntry = resultsCacheRef.current.get(q);
       if (cachedEntry) {
-        setQuery(q);
+        setQueryAndRef(q);
         setHasSearched(true);
         hasSearchedRef.current = true;
         resultsRef.current = cachedEntry.results;
@@ -489,21 +475,6 @@ function SearchPageContent() {
     isProgrammaticNavRef.current = true;
   }, []);
 
-  // Suggestion Logic
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      const q = query.trim();
-      if (q.length >= 2 && !hasSearchedRef.current) {
-        try {
-          const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
-          const data = await res.json();
-          setSuggestions(data.suggestions || []);
-          setShowSuggestions((data.suggestions?.length || 0) > 0);
-        } catch { setSuggestions([]); }
-      } else { setShowSuggestions(false); }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
 
   // Loading Status Logic
   useEffect(() => {
@@ -544,7 +515,7 @@ function SearchPageContent() {
                     // Restore previous search results instantly from cache
                     const cached = resultsCacheRef.current.get(prevQuery);
                     if (cached) {
-                      setQuery(prevQuery);
+                      setQueryAndRef(prevQuery);
                       resultsRef.current = cached.results;
                       setResults(cached.results);
                       setMeta(cached.meta);
@@ -561,7 +532,7 @@ function SearchPageContent() {
                     hasSearchedRef.current = false;
                     setResults([]);
                     resultsRef.current = [];
-                    setQuery("");
+                    setQueryAndRef("");
                     lastSearchRef.current = "";
                     setError(null);
                     setMeta(null);
@@ -575,7 +546,7 @@ function SearchPageContent() {
                 </svg>
               </button>
               <div 
-                onClick={() => { setHasSearched(false); setQuery(""); router.push("/"); }}
+                onClick={() => { setHasSearched(false); setQueryAndRef(""); router.push("/"); }}
                 className="cursor-pointer flex items-center gap-2.5 group shrink-0"
               >
               <div className={`bg-white flex items-center justify-center text-black font-bold font-display transition-all w-7 h-7 rounded-[7px] text-base`}>
@@ -592,12 +563,9 @@ function SearchPageContent() {
               <SearchInputUI 
                 compact={true} 
                 query={query} 
-                setQuery={setQuery} 
+                setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                showSuggestions={showSuggestions} 
-                setShowSuggestions={setShowSuggestions} 
-                suggestions={suggestions}
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
               />
@@ -634,12 +602,9 @@ function SearchPageContent() {
 
               <SearchInputUI 
                 query={query} 
-                setQuery={setQuery} 
+                setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                showSuggestions={showSuggestions} 
-                setShowSuggestions={setShowSuggestions} 
-                suggestions={suggestions}
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
               />
@@ -703,12 +668,9 @@ function SearchPageContent() {
               <SearchInputUI 
                 compact={true} 
                 query={query} 
-                setQuery={setQuery} 
+                setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                showSuggestions={showSuggestions} 
-                setShowSuggestions={setShowSuggestions} 
-                suggestions={suggestions}
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
               />
@@ -720,7 +682,7 @@ function SearchPageContent() {
                   {searchHistory.map((h, i) => (
                     <button
                       key={i}
-                      onClick={() => { setQuery(h); onSearch(undefined, { q: h }); }}
+                      onClick={() => { setQueryAndRef(h); onSearch(undefined, { q: h }); }}
                       className="px-3 py-1.5 bg-neutral-900/50 border border-neutral-800 rounded-full text-[12px] text-neutral-400 hover:text-white hover:border-neutral-600 transition-all"
                     >
                       {h}
