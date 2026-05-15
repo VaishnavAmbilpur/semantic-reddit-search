@@ -249,6 +249,11 @@ function SearchPageContent() {
   const isSearchingRef = useRef<boolean>(false);
   const hasSearchedRef = useRef<boolean>(!!searchParams.get("q"));
 
+  // In-memory results cache: query → { results, meta } — powers instant back navigation
+  const resultsCacheRef = useRef<Map<string, { results: SearchResult[]; meta: { time: number; cached: boolean } | null }>>(new Map());
+  // Navigation stack of queries — lets us pop back to the previous search
+  const navStackRef = useRef<string[]>([]);
+
   // Persistent Stats (Google Strategy: 100 high-precision searches)
   const [tokensRemaining, setTokensRemaining] = useState(3500000);
   const [searchesRemaining, setSearchesRemaining] = useState(100);
@@ -352,6 +357,7 @@ function SearchPageContent() {
       ...(shouldRefresh && { refresh: "true" }) 
     });
 
+    isProgrammaticNavRef.current = true;
     router.push(`?${params.toString()}`, { scroll: false });
 
     try {
@@ -363,9 +369,18 @@ function SearchPageContent() {
       const searchResults = data.results || [];
       resultsRef.current = searchResults;
       
+      // Store in in-memory cache for instant back navigation
+      const metaVal = { time: data.queryTime, cached: data.cached };
+      resultsCacheRef.current.set(q, { results: searchResults, meta: metaVal });
+
+      // Push to navigation stack only if this is a NEW query (not the same as top)
+      if (navStackRef.current[navStackRef.current.length - 1] !== q) {
+        navStackRef.current.push(q);
+      }
+
       // Initial results (unfiltered)
       setResults(searchResults);
-      setMeta({ time: data.queryTime, cached: data.cached });
+      setMeta(metaVal);
       setError(null);
       
       if (!data.cached) {
@@ -417,10 +432,37 @@ function SearchPageContent() {
     setResults(filtered);
   }, [type, dateRange, sort]);
 
+  // Track whether a URL change was triggered by the back/forward browser buttons
+  // (popstate) vs by our own router.push() calls inside onSearch.
+  // When it's a browser navigation event we should RESET to home rather than
+  // re-firing onSearch (which causes the infinite loop).
+  const isProgrammaticNavRef = useRef(false);
+
   // Handle URL changes & sync
   useEffect(() => {
     const q = searchParams.get("q");
     if (q) {
+      // If this URL change came from our own router.push() inside onSearch or back,
+      // skip re-running onSearch to break the loop.
+      if (isProgrammaticNavRef.current) {
+        isProgrammaticNavRef.current = false;
+        return;
+      }
+      // Browser native back/forward: try to restore from in-memory cache first
+      const cachedEntry = resultsCacheRef.current.get(q);
+      if (cachedEntry) {
+        setQuery(q);
+        setHasSearched(true);
+        hasSearchedRef.current = true;
+        resultsRef.current = cachedEntry.results;
+        setResults(cachedEntry.results);
+        setMeta(cachedEntry.meta);
+        setError(null);
+        setType('all');
+        setDateRange('all');
+        lastSearchRef.current = `${q}|relevance|all|all|false`;
+        return;
+      }
       const currentSig = `${q}|${searchParams.get('sort') || 'relevance'}|${searchParams.get('type') || 'all'}|${searchParams.get('dateRange') || 'all'}|${searchParams.get('refresh') === 'true'}`;
       if (currentSig !== lastSearchRef.current) {
         onSearch(undefined, { 
@@ -437,8 +479,15 @@ function SearchPageContent() {
       setResults([]);
       resultsRef.current = [];
       lastSearchRef.current = "";
+      setError(null);
+      setMeta(null);
     }
   }, [searchParams, onSearch]);
+
+  // Flag our own router.push() calls so the URL-sync effect above can ignore them
+  useEffect(() => {
+    isProgrammaticNavRef.current = true;
+  }, []);
 
   // Suggestion Logic
   useEffect(() => {
@@ -486,7 +535,39 @@ function SearchPageContent() {
           {hasSearched && (
             <div className="flex items-center gap-4">
               <button 
-                onClick={() => router.back()}
+                onClick={() => {
+                  // Pop the current query off the stack
+                  navStackRef.current.pop();
+                  const prevQuery = navStackRef.current[navStackRef.current.length - 1];
+
+                  if (prevQuery) {
+                    // Restore previous search results instantly from cache
+                    const cached = resultsCacheRef.current.get(prevQuery);
+                    if (cached) {
+                      setQuery(prevQuery);
+                      resultsRef.current = cached.results;
+                      setResults(cached.results);
+                      setMeta(cached.meta);
+                      setError(null);
+                      setType('all');
+                      setDateRange('all');
+                      lastSearchRef.current = `${prevQuery}|relevance|all|all|false`;
+                      isProgrammaticNavRef.current = true;
+                      router.push(`?q=${encodeURIComponent(prevQuery)}`, { scroll: false });
+                    }
+                  } else {
+                    // No previous search — go home
+                    setHasSearched(false);
+                    hasSearchedRef.current = false;
+                    setResults([]);
+                    resultsRef.current = [];
+                    setQuery("");
+                    lastSearchRef.current = "";
+                    setError(null);
+                    setMeta(null);
+                    router.push("/");
+                  }
+                }}
                 className="w-9 h-9 flex items-center justify-center rounded-full bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700 transition-all active:scale-90"
               >
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
