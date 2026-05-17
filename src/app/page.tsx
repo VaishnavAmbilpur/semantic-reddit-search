@@ -144,6 +144,15 @@ function parseError(raw: string): ParsedError {
       retryable: false,
     };
   }
+  if (r.includes('global search limit reached')) {
+    return {
+      icon: '🌍',
+      title: 'Global Search Limit Reached',
+      message: 'The global pool of 100 searches has been exhausted by the community.',
+      hint: 'Please wait for the site owner to reset the limit or increase the quota.',
+      retryable: false,
+    };
+  }
   if (r.includes('jina_bad_key') || r.includes('jina_auth_error') || r.includes('invalid_token')) {
     return {
       icon: '🔑',
@@ -241,20 +250,25 @@ function SearchPageContent() {
   // Navigation stack of queries — lets us pop back to the previous search
   const navStackRef = useRef<string[]>([]);
 
-  // Persistent Stats (Google Strategy: 100 high-precision searches)
-  const [tokensRemaining, setTokensRemaining] = useState(3500000);
+  // Persistent Stats (Global Strategy: 100 high-precision searches)
+  const [tokensRemaining, setTokensRemaining] = useState(2050000);
   const [searchesRemaining, setSearchesRemaining] = useState(100);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
+  // Fetch Global Stats on Load
   useEffect(() => {
-    const savedTokens = localStorage.getItem('redex_tokens');
-    const savedSearches = localStorage.getItem('redex_searches');
+    fetch('/api/stats')
+      .then(res => res.ok ? res.json() : { searchesRemaining: 100 })
+      .then(data => {
+        setSearchesRemaining(data.searchesRemaining);
+        setTokensRemaining(data.searchesRemaining * 5500); // Optimized estimate 5.5k tokens per search
+      })
+      .catch(() => {});
+
     const savedHistory = localStorage.getItem('redex_history');
-    setTimeout(() => {
-      if (savedTokens) setTokensRemaining(parseInt(savedTokens));
-      if (savedSearches) setSearchesRemaining(parseInt(savedSearches));
-      if (savedHistory) setSearchHistory(JSON.parse(savedHistory));
-    }, 0);
+    if (savedHistory) {
+      setTimeout(() => setSearchHistory(JSON.parse(savedHistory)), 0);
+    }
   }, []);
 
   const addToHistory = useCallback((q: string) => {
@@ -268,14 +282,9 @@ function SearchPageContent() {
 
   const deductTokens = useCallback((isCached: boolean) => {
     if (isCached) return; 
-    setTokensRemaining(prev => {
-      const next = Math.max(0, prev - 35000);
-      localStorage.setItem('redex_tokens', next.toString());
-      return next;
-    });
     setSearchesRemaining(prev => {
       const next = Math.max(0, prev - 1);
-      localStorage.setItem('redex_searches', next.toString());
+      setTokensRemaining(next * 5500);
       return next;
     });
   }, []);
@@ -335,7 +344,7 @@ function SearchPageContent() {
     
     const params = new URLSearchParams({
       q,
-      sort: 'relevance', // Always search by relevance initially
+      sort: 'relevance',
       type: 'all',
       dateRange: 'all',
       minUpvotes: "0",
@@ -470,7 +479,6 @@ function SearchPageContent() {
     }
   }, [searchParams, onSearch]);
 
-  // Flag our own router.push() calls so the URL-sync effect above can ignore them
   useEffect(() => {
     isProgrammaticNavRef.current = true;
   }, []);
@@ -659,7 +667,6 @@ function SearchPageContent() {
           </div>
         )}
 
-        {/* RESULTS PAGE STATE */}
         {hasSearched && (
           <div className="w-full max-w-5xl mx-auto px-6 py-6 animate-in fade-in duration-500">
             

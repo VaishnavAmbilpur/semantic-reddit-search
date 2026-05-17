@@ -3,6 +3,7 @@ import { semanticSearchWithVector, mergeAndRank } from '@/lib/search';
 import { generateQueryEmbedding, generateSearchEmbeddings, rerankResults } from '@/lib/embeddings';
 import { getCacheKey, getCachedResults, setCachedResults } from '@/lib/cache';
 import { qstash } from '@/lib/qstash';
+import { redis } from '@/lib/redis';
 import { SearchResult } from '@/lib/search';
 import { searchGoogleReddit } from '@/lib/googleSearch';
 import { searchPostsGlobal, ArcticPost } from '@/lib/arcticShift';
@@ -47,6 +48,23 @@ export async function GET(req: Request) {
     }
   }
 
+  // 1.5 Global Search Limit Check
+  let searchesRemaining = await redis.get<number>('global_searches_remaining');
+  if (searchesRemaining === null) {
+    await redis.set('global_searches_remaining', 100);
+    searchesRemaining = 100;
+  }
+  
+  if (searchesRemaining <= 0) {
+    return Response.json({ 
+      error: 'Global Search Limit Reached',
+      details: 'The global pool of 100 searches has been exhausted. Please wait for the next reset.'
+    }, { status: 403 });
+  }
+
+  // Decrement the global counter
+  await redis.decr('global_searches_remaining');
+
   try {
     // 2. Embed query ONCE for both lanes
     console.log(`[AI] Generating query embedding for: "${q}"`);
@@ -78,11 +96,11 @@ export async function GET(req: Request) {
         }
       });
 
-      // Optimization: Limit to top 35 candidates for AI processing
-      const topPosts = posts.slice(0, 35);
+      // Optimization: Limit to top 20 candidates for AI processing (Saves Tokens)
+      const topPosts = posts.slice(0, 20);
 
       // Score and convert to SearchResult format
-      const texts = topPosts.map((p: ArcticPost) => `${p.title} ${p.selftext || ''}`.slice(0, 1000));
+      const texts = topPosts.map((p: ArcticPost) => `${p.title} ${p.selftext || ''}`.slice(0, 600));
       
       console.log(`[AI] Generating embeddings for ${topPosts.length} live posts...`);
       const vectors = await generateSearchEmbeddings(texts);
@@ -114,8 +132,8 @@ export async function GET(req: Request) {
     // 5. SECOND PASS: Jina Reranker (The Accuracy Booster)
     // We rerank the top candidates to ensure the best answers are at the absolute top
     if (results.length > 1) {
-      const docsToRerank = results.slice(0, 25).map(r => {
-        const text = `${r.title || ''} ${r.content || ''}`.trim().slice(0, 2000);
+      const docsToRerank = results.slice(0, 10).map(r => {
+        const text = `${r.title || ''} ${r.content || ''}`.trim().slice(0, 1000);
         return {
           id: r.id,
           text: text.length > 0 ? text : 'No content available'
