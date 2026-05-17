@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const q          = searchParams.get('q')?.trim();
   
   // 0. Environment & Input Validation
-  if (!process.env.JINA_API_KEY || !process.env.SERPAPI_API_KEY) {
+  if (!(process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY) || !process.env.SERPAPI_API_KEY) {
     console.error('[Search] Deployment Error: Missing API Keys in Environment');
     return Response.json({ error: 'System Configuration Error: Missing API Keys' }, { status: 500 });
   }
@@ -129,7 +129,7 @@ export async function GET(req: Request) {
     // 4. Merge and Initial Rank
     let results = mergeAndRank(dbResults, liveResults, limit, sort, dateRange);
 
-    // 5. SECOND PASS: Jina Reranker (The Accuracy Booster)
+    // 5. SECOND PASS: Hugging Face Reranker (The Accuracy Booster)
     // We rerank the top candidates to ensure the best answers are at the absolute top
     if (results.length > 1) {
       const docsToRerank = results.slice(0, 10).map(r => {

@@ -35,9 +35,9 @@ const SearchInputUI = ({
   tokensRemaining,
   searchesRemaining
 }: SearchInputProps) => (
-  <div className={`relative w-full ${compact ? 'max-w-3xl' : 'max-w-2xl'}`}>
-    <div className={`relative flex items-center bg-neutral-900 border border-neutral-800 hover:border-neutral-700 focus-within:shadow-[0_0_20px_rgba(255,255,255,0.05)] focus-within:border-white transition-all ${compact ? 'rounded-full px-4 py-1.5' : 'rounded-full px-6 py-3 shadow-2xl'}`}>
-      <div className={`${compact ? 'text-white' : 'text-neutral-500'}`}>
+  <div className={`relative w-full ${compact ? 'max-w-3xl' : 'max-w-2xl'} mx-auto`}>
+    <div className={`relative flex items-center bg-neutral-900/30 backdrop-blur-xl border border-neutral-800/80 hover:border-neutral-700/80 focus-within:border-neutral-400 focus-within:ring-1 focus-within:ring-neutral-600 transition-all duration-300 ${compact ? 'rounded-full px-4 py-1.5' : 'rounded-3xl px-6 py-4 shadow-2xl'}`}>
+      <div className={`transition-colors duration-300 ${compact ? 'text-white' : 'text-neutral-500'} shrink-0`}>
         <svg width={compact ? "18" : "22"} height={compact ? "18" : "22"} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" strokeWidth="2.5"/><path d="M21 21l-4.35-4.35" strokeWidth="2.5" strokeLinecap="round"/></svg>
       </div>
       <input
@@ -51,58 +51,49 @@ const SearchInputUI = ({
           }
         }}
         onFocus={(e) => { e.target.select(); }}
-        placeholder="Ask anything..."
-        className={`flex-1 w-full bg-transparent border-none outline-none text-white placeholder:text-neutral-600 ml-3 ${compact ? 'text-[15px]' : 'text-[18px]'}`}
+        placeholder="Scour Reddit archives semantically..."
+        className={`flex-1 w-full bg-transparent border-none outline-none text-white placeholder:text-neutral-500 ml-3 transition-colors duration-300 ${compact ? 'text-[14px]' : 'text-[16px] font-light tracking-wide'}`}
       />
       {compact && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button 
             onClick={() => { onSearch(undefined); }}
             disabled={loading} 
-            className="px-4 py-1.5 bg-white text-black rounded-full font-bold text-[12px] hover:bg-neutral-200 transition-colors"
+            className="px-4 py-1.5 bg-white hover:bg-neutral-200 text-black rounded-full font-bold text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-[0_2px_10px_rgba(255,255,255,0.1)]"
           >
             SEARCH
           </button>
         </div>
       )}
       {loading && (
-        <div className="ml-2 w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <div className="ml-2 w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
       )}
     </div>
 
     {!compact && (
-      <div className="mt-6 flex flex-col items-center gap-4">
+      <div className="mt-8 flex flex-col items-center gap-6">
         <button 
           onClick={() => { onSearch(undefined); }}
           disabled={loading} 
-          className="bg-white text-black px-12 py-3.5 rounded-full font-bold text-[16px] hover:bg-neutral-100 transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)] uppercase tracking-widest"
+          className="bg-white hover:bg-neutral-200 text-black px-12 py-3.5 rounded-full font-bold text-[13px] uppercase tracking-[0.2em] transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-[0_4px_30px_rgba(255,255,255,0.12)] shrink-0"
         >
-          {loading ? 'Analyzing...' : 'Begin Search'}
+          {loading ? 'Analyzing intent...' : 'Begin scan'}
         </button>
         
-        <div className="flex flex-col items-center text-center max-w-md">
-          <div className="flex items-center gap-6 bg-neutral-900/50 border border-neutral-800 px-5 py-2.5 rounded-2xl">
-             <div className="flex flex-col items-center">
-               <span className="text-white font-bold text-[15px]">{(tokensRemaining / 1000).toFixed(0)}k</span>
-               <span className="text-[9px] text-neutral-500 uppercase tracking-[0.15em] font-bold">Tokens</span>
-             </div>
-             <div className="w-px h-6 bg-neutral-800" />
-             <div className="flex flex-col items-center">
-               <span className="text-white font-bold text-[15px]">{searchesRemaining}</span>
-               <span className="text-[9px] text-neutral-500 uppercase tracking-[0.15em] font-bold">Scans</span>
+        <div className="flex flex-col items-center text-center max-w-md w-full animate-in fade-in duration-500 delay-300">
+          <div className="flex items-center bg-neutral-900/30 backdrop-blur-md border border-neutral-800/60 px-6 py-2.5 rounded-2xl shadow-lg">
+             <div className="flex flex-col items-center min-w-[120px]">
+               <span className="text-white font-mono font-bold text-[16px]">{searchesRemaining}</span>
+               <span className="text-[9px] text-neutral-500 uppercase tracking-[0.2em] font-bold mt-0.5">Scans Remaining</span>
              </div>
           </div>
         </div>
       </div>
     )}
-
-
   </div>
 );
 
-// ---------------------------------------------------------------------------
-// Error classifier — maps raw API error strings to friendly UI descriptions
-// ---------------------------------------------------------------------------
+// Maps raw API error strings to friendly UI descriptions
 type ParsedError = {
   icon: string;
   title: string;
@@ -135,12 +126,12 @@ function parseError(raw: string): ParsedError {
       retryLabel: 'Try Again',
     };
   }
-  if (r.includes('jina_no_balance') || r.includes('insufficient account balance') || r.includes('authz_insufficient_balance')) {
+  if (r.includes('jina_no_balance') || r.includes('insufficient account balance') || r.includes('authz_insufficient_balance') || r.includes('hf_no_balance')) {
     return {
       icon: '💳',
-      title: 'Jina AI balance empty',
+      title: 'Hugging Face limit reached',
       message: 'The AI embedding service ran out of credits. Search is temporarily unavailable.',
-      hint: 'The site owner needs to top up the Jina AI account at jina.ai/api-dashboard.',
+      hint: 'The site owner needs to verify the Hugging Face account status.',
       retryable: false,
     };
   }
@@ -153,16 +144,16 @@ function parseError(raw: string): ParsedError {
       retryable: false,
     };
   }
-  if (r.includes('jina_bad_key') || r.includes('jina_auth_error') || r.includes('invalid_token')) {
+  if (r.includes('jina_bad_key') || r.includes('jina_auth_error') || r.includes('invalid_token') || r.includes('hf_bad_key')) {
     return {
       icon: '🔑',
       title: 'AI service authentication failed',
-      message: 'The Jina AI API key is invalid or expired.',
-      hint: 'The site owner needs to update the JINA_API_KEY environment variable.',
+      message: 'The Hugging Face API key is invalid or expired.',
+      hint: 'The site owner needs to update the HUGGING_FACE_API_KEY environment variable.',
       retryable: false,
     };
   }
-  if (r.includes('jina') || r.includes('embedding') || r.includes('429')) {
+  if (r.includes('jina') || r.includes('huggingface') || r.includes('hf') || r.includes('embedding') || r.includes('429')) {
     return {
       icon: '🤖',
       title: 'AI service temporarily busy',
@@ -216,7 +207,7 @@ function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Core State
+  // Core states for semantic query and results
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const queryRef = useRef(searchParams.get("q") || "");
 
@@ -228,34 +219,33 @@ function SearchPageContent() {
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(!!searchParams.get("q"));
   
-  // Filters State
+  // Active filters and subset scopes
   const [sort, setSort] = useState(searchParams.get("sort") || "relevance");
   const [type, setType] = useState(searchParams.get("type") || "all");
   const [dateRange, setDateRange] = useState(searchParams.get("dateRange") || "all");
   const [selectedSubs] = useState<string[]>(searchParams.get("subreddits")?.split(",") || []);
   
-  // UI State
+  // Status and response metadata
   const [meta, setMeta] = useState<{ time: number; cached: boolean } | null>(null);
   const [loadingStatus, setLoadingStatus] = useState("Scouring Reddit archives...");
   const [error, setError] = useState<string | null>(null);
 
-  // Refs to stabilize onSearch and prevent identity-change loops
+  // Search stable refs to prevent re-entrant loops
   const lastSearchRef = useRef<string>("");
   const resultsRef = useRef<SearchResult[]>([]);
   const isSearchingRef = useRef<boolean>(false);
   const hasSearchedRef = useRef<boolean>(!!searchParams.get("q"));
 
-  // In-memory results cache: query → { results, meta } — powers instant back navigation
+  // Navigation cache and stack references
   const resultsCacheRef = useRef<Map<string, { results: SearchResult[]; meta: { time: number; cached: boolean } | null }>>(new Map());
-  // Navigation stack of queries — lets us pop back to the previous search
   const navStackRef = useRef<string[]>([]);
 
-  // Persistent Stats (Global Strategy: 100 high-precision searches)
+  // Global query quota state
   const [tokensRemaining, setTokensRemaining] = useState(2050000);
   const [searchesRemaining, setSearchesRemaining] = useState(100);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
-  // Fetch Global Stats on Load
+  // Retrieve dashboard and session metadata on mount
   useEffect(() => {
     fetch('/api/stats')
       .then(res => res.ok ? res.json() : { searchesRemaining: 100 })
@@ -308,7 +298,7 @@ function SearchPageContent() {
     const shouldRefresh = overrideParams?.refresh || false;
     
     // NEW SEARCH RESET: If query changed or refreshing, reset filters to default
-    const isNewQuery = q !== new URLSearchParams(window.location.search).get('q');
+    const isNewQuery = q !== searchParams.get('q');
     if (isNewQuery || shouldRefresh) {
       setType('all');
       setDateRange('all');
@@ -327,8 +317,7 @@ function SearchPageContent() {
     // Sync input field
     if (overrideParams?.q) setQueryAndRef(overrideParams.q);
 
-    // TOKEN PROTECTION: Local re-sort if same query (Now handled by client-side filter useEffect)
-    // But we still need to handle URL updates for query/refresh
+    // Skip remote search when updating local search filters
     const currentUrlQ = new URLSearchParams(window.location.search).get('q');
     if (!isNewQuery && !shouldRefresh) {
       // Just updating filters locally - skip API
@@ -364,11 +353,10 @@ function SearchPageContent() {
       const searchResults = data.results || [];
       resultsRef.current = searchResults;
       
-      // Store in in-memory cache for instant back navigation
+      // Cache results and track in history stack
       const metaVal = { time: data.queryTime, cached: data.cached };
       resultsCacheRef.current.set(q, { results: searchResults, meta: metaVal });
 
-      // Push to navigation stack only if this is a NEW query (not the same as top)
       if (navStackRef.current[navStackRef.current.length - 1] !== q) {
         navStackRef.current.push(q);
       }
@@ -392,7 +380,7 @@ function SearchPageContent() {
       setLoading(false);
       isSearchingRef.current = false;
     }
-  }, [sort, type, dateRange, selectedSubs, router, addToHistory, deductTokens]);
+  }, [sort, type, dateRange, selectedSubs, router, addToHistory, deductTokens, searchParams]);
 
   // Client-side Filter/Sort Effect (Saves Tokens)
   useEffect(() => {
@@ -417,10 +405,12 @@ function SearchPageContent() {
     }
 
     // 3. Sort
-    if (sort === 'top') {
+    if (dateRange === 'week') {
+      filtered.sort((a, b) => new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime());
+    } else if (sort === 'top') {
       filtered.sort((a, b) => b.upvotes - a.upvotes);
     } else {
-      // Relevance is handled by the initial Jina/Vector score
+      // Relevance is handled by the initial Hugging Face/Vector score
       filtered.sort((a, b) => b.similarity - a.similarity);
     }
 
@@ -432,6 +422,11 @@ function SearchPageContent() {
   // When it's a browser navigation event we should RESET to home rather than
   // re-firing onSearch (which causes the infinite loop).
   const isProgrammaticNavRef = useRef(false);
+
+  const onSearchRef = useRef(onSearch);
+  useEffect(() => {
+    onSearchRef.current = onSearch;
+  }, [onSearch]);
 
   // Handle URL changes & sync
   useEffect(() => {
@@ -453,14 +448,21 @@ function SearchPageContent() {
         setResults(cachedEntry.results);
         setMeta(cachedEntry.meta);
         setError(null);
-        setType('all');
-        setDateRange('all');
-        lastSearchRef.current = `${q}|relevance|all|all|false`;
+        
+        const urlType = searchParams.get('type') || 'all';
+        const urlDateRange = searchParams.get('dateRange') || 'all';
+        const urlSort = searchParams.get('sort') || 'relevance';
+        
+        setType(urlType);
+        setDateRange(urlDateRange);
+        setSort(urlSort);
+        
+        lastSearchRef.current = `${q}|${urlSort}|${urlType}|${urlDateRange}|false`;
         return;
       }
       const currentSig = `${q}|${searchParams.get('sort') || 'relevance'}|${searchParams.get('type') || 'all'}|${searchParams.get('dateRange') || 'all'}|${searchParams.get('refresh') === 'true'}`;
       if (currentSig !== lastSearchRef.current) {
-        onSearch(undefined, { 
+        onSearchRef.current(undefined, { 
           q, 
           sort: searchParams.get('sort') || undefined,
           type: searchParams.get('type') || undefined,
@@ -477,7 +479,7 @@ function SearchPageContent() {
       setError(null);
       setMeta(null);
     }
-  }, [searchParams, onSearch]);
+  }, [searchParams]);
 
   useEffect(() => {
     isProgrammaticNavRef.current = true;
@@ -581,12 +583,18 @@ function SearchPageContent() {
           )}
 
           {!hasSearched ? (
-            <a href="/admin" className="text-[13px] font-semibold text-neutral-400 hover:text-white transition-colors shrink-0">
+            <a 
+              href="/admin" 
+              className="text-[12px] font-semibold text-neutral-400 hover:text-white px-3.5 py-1.5 rounded-full bg-neutral-900/30 border border-neutral-900 hover:border-neutral-800 transition-all shrink-0 backdrop-blur-sm shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
+            >
               Admin Console
             </a>
           ) : (
             <div className="ml-auto hidden md:block">
-              <a href="/admin" className="text-[12px] font-semibold text-neutral-500 hover:text-white transition-colors">
+              <a 
+                href="/admin" 
+                className="text-[12px] font-semibold text-neutral-500 hover:text-white px-3.5 py-1.5 rounded-full bg-neutral-900/30 border border-neutral-900 hover:border-neutral-800 transition-all shrink-0 backdrop-blur-sm"
+              >
                 Admin Console
               </a>
             </div>
@@ -599,13 +607,12 @@ function SearchPageContent() {
         
         {/* LANDING PAGE STATE */}
         {!hasSearched && (
-          <div className="w-full min-h-[calc(100vh-76px)] flex flex-col items-center justify-center px-6 animate-in fade-in duration-700">
+          <div className="relative w-full min-h-[calc(100vh-76px)] flex flex-col items-center justify-center px-6 animate-in fade-in duration-700 bg-[radial-gradient(#ffffff06_1px,transparent_1px)] [background-size:32px_32px]">
             
-            <div className="flex flex-col items-center w-full max-w-4xl -mt-10">
-              {/* Hero */}
-              <p className="text-[13px] font-semibold tracking-[0.18em] uppercase text-neutral-500 mb-5">AI-Powered Discovery</p>
-              <h1 className="text-5xl md:text-[68px] font-display font-bold text-white mb-8 tracking-tight text-center leading-[1.05]">
-                Semantic intelligence<br />for Reddit.
+            <div className="relative flex flex-col items-center w-full max-w-4xl -mt-20 z-10">
+              {/* Hero Header */}
+              <h1 className="text-4xl md:text-[56px] font-display font-extrabold text-white mb-8 tracking-tight text-center leading-tight">
+                Redex <span className="text-neutral-500 font-light font-sans">- To search Reddit</span>
               </h1>
 
               <SearchInputUI 
@@ -616,53 +623,6 @@ function SearchPageContent() {
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
               />
-
-              {/* Feature Pills */}
-              <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl w-full">
-                {[
-                  {
-                    icon: (
-                      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    ),
-                    label: 'Semantic Search',
-                    desc: 'Meaning over keywords'
-                  },
-                  {
-                    icon: (
-                      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    ),
-                    label: 'Live + Indexed',
-                    desc: 'Real-time & Archives'
-                  },
-                  {
-                    icon: (
-                      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    ),
-                    label: 'Ranked by Votes',
-                    desc: 'Community-validated'
-                  },
-                ].map(({ icon, label, desc }) => (
-                  <div key={label} className="flex items-start gap-3 bg-neutral-900 border border-neutral-800 rounded-2xl px-5 py-4 shadow-xl">
-                    <div className="mt-0.5 w-8 h-8 rounded-xl bg-white flex items-center justify-center text-black shrink-0">
-                      {icon}
-                    </div>
-                    <div>
-                      <p className="text-[13px] font-semibold text-white mb-0.5">{label}</p>
-                      <p className="text-[12px] text-neutral-500 leading-snug">{desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <p className="mt-10 text-[12px] text-neutral-500 tracking-wide opacity-50 hover:opacity-100 transition-opacity">
-                Powered by <span className="font-semibold text-neutral-300">pgvector</span> &amp; <span className="font-semibold text-neutral-300">Jina AI</span>
-              </p>
             </div>
           </div>
         )}
@@ -702,30 +662,17 @@ function SearchPageContent() {
             <div className="flex flex-col lg:flex-row gap-10">
               {/* Left Column: Results */}
               <div className="flex-1 max-w-3xl">
-                {/* Meta & Tabs */}
+                {/* Meta Stats */}
                 <div className="flex items-center gap-6 border-b border-neutral-900 mb-6 pb-2">
-                  <div className="flex gap-6">
-                    {[{id: 'all', label: 'All'}, {id: 'post', label: 'Posts'}, {id: 'comment', label: 'Comments'}].map(opt => (
-                      <button 
-                        key={opt.id} 
-                        onClick={() => setType(opt.id)} 
-                        className={`text-[14px] font-bold pb-2 border-b-2 transition-all ${type === opt.id ? 'border-white text-white' : 'border-transparent text-neutral-500 hover:text-neutral-300'}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
                   {meta && !loading && (
-                    <div className="flex items-center gap-6 ml-auto">
-                      <div className="flex flex-col items-end">
+                    <div className="flex items-center gap-6 w-full justify-between">
+                      <div className="flex flex-col">
                         <div className="flex gap-2 text-[11px] text-neutral-600 font-bold uppercase tracking-widest">
                           <span>{searchesRemaining} Scans Remaining</span>
-                          <span className="text-neutral-800">|</span>
-                          <span>{(tokensRemaining / 1000).toFixed(0)}k Tokens</span>
                         </div>
                       </div>
 
-                      <span className="text-[13px] text-neutral-500 min-w-[80px] text-right">
+                      <span className="text-[13px] text-neutral-500">
                         {results.length} results ({meta.time}ms)
                       </span>
                     </div>
@@ -825,86 +772,72 @@ function SearchPageContent() {
                       </div>
                     );
                   })()
-                ) : results.length === 0 ? (
-                  <div className="py-16 animate-in fade-in duration-500">
-                    {/* Empty icon */}
-                    <div className="text-4xl text-center mb-6 select-none">🔍</div>
-
-                    <div className="max-w-sm mx-auto border border-neutral-800 bg-neutral-900 rounded-2xl overflow-hidden shadow-2xl">
-                      <div className="px-6 pt-6 pb-5">
-                        <h3 className="text-[17px] font-semibold text-white mb-1.5 text-center">
-                          No matches for &quot;{query}&quot;
-                        </h3>
-                        <p className="text-[13px] text-neutral-400 text-center leading-relaxed">
-                          Try broader terms or switch to <strong className="text-neutral-300">Any time</strong> if you&apos;re on Recent.
-                        </p>
-                      </div>
-                      <div className="bg-black/40 border-t border-neutral-800 px-6 py-3">
-                        <p className="text-[12px] text-neutral-500 text-center leading-relaxed">
-                          💡 Try broader terms, fewer words, or switch to <strong className="text-neutral-300">Any time</strong> if you&apos;re on Recent.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 ) : (
-                  <div className="space-y-8 pb-20">
+                  <div className="space-y-6 pb-20">
                     {results.map((r) => (
-                      <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" className="block group">
+                      <a 
+                        key={r.id} 
+                        href={r.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="block p-6 bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 hover:border-neutral-800/80 rounded-2xl transition-all duration-300 group hover:-translate-y-0.5 shadow-sm hover:shadow-lg"
+                      >
                         {/* URL / Subreddit Context */}
-                        <div className="flex items-center gap-2.5 mb-1.5">
-                          <div className="w-7 h-7 bg-neutral-900 rounded-full flex items-center justify-center text-[13px] font-bold text-neutral-400 border border-neutral-800">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-8 h-8 bg-neutral-950 border border-neutral-800 rounded-xl flex items-center justify-center text-[12px] font-bold text-neutral-300 shadow-[0_2px_8px_rgba(0,0,0,0.4)]">
                             r/
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-[13px] font-medium text-white line-clamp-1 hover:underline">
+                            <span className="text-[13px] font-bold text-white tracking-wide line-clamp-1 hover:underline">
                               reddit.com/r/{r.subreddit}
                             </span>
-                            <span className="text-[11px] text-neutral-500 line-clamp-1">
+                            <span className="text-[11px] text-neutral-500 font-light mt-0.5">
                               u/{r.author} &bull; {new Date(r.redditCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric'})}
                             </span>
                           </div>
                         </div>
                         
-                        {/* Title (Link) */}
-                        <h3 className="text-[20px] text-sky-400 group-hover:underline font-medium leading-snug mb-1">
-                          {r.type === 'post' ? r.title : `Comment on: ${r.url.split('/').pop()?.replace(/_/g, ' ') || 'Thread'}`}
+                        {/* Title */}
+                        <h3 className="text-[18px] text-white group-hover:text-neutral-300 font-semibold leading-snug transition-colors duration-200">
+                          {r.type === 'post' ? r.title : `Comment on thread: ${r.url.split('/').pop()?.replace(/_/g, ' ') || 'Thread'}`}
                         </h3>
 
                         {/* Snippet */}
                         {r.content && r.content !== "[removed]" && (
-                          <p className="text-[14px] text-neutral-300 leading-relaxed line-clamp-2">
+                          <p className="text-[13.5px] text-neutral-400 font-light leading-relaxed mt-2.5 mb-4 line-clamp-2">
                             {r.content}
                           </p>
                         )}
                         
                         {/* Tags */}
-                        <div className="mt-2 flex gap-3 text-[12px] font-bold">
-                          <span className="text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
+                        <div className="mt-4 flex flex-wrap gap-2.5 text-[11px] font-medium tracking-wide">
+                          <span className="text-white bg-neutral-955 border border-neutral-850 px-2.5 py-1 rounded-md font-mono">
                             {(r.similarity*100).toFixed(0)}% Match
                           </span>
 
-                          {/* NEW: Source Badges */}
+                          {/* Source Badges */}
                           {r.isLive ? (
                             <span 
                               title="Fetched live from Reddit — being saved to index"
-                              className="text-sky-400 bg-sky-950/40 px-2 py-0.5 rounded flex items-center gap-1 cursor-help border border-sky-900/50"
+                              className="text-sky-400 bg-sky-950/10 border border-sky-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
                             >
                               <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block animate-pulse" />
-                              Live
+                              Live Stream
                             </span>
                           ) : (
                             <span 
                               title="From semantic index — instant recall"
-                              className="text-violet-400 bg-violet-950/40 px-2 py-0.5 rounded flex items-center gap-1 cursor-help border border-violet-900/50"
+                              className="text-violet-400 bg-violet-950/10 border border-violet-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
                             >
                               <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                              Indexed
+                              Semantic Index
                             </span>
                           )}
 
-                          <span className="text-neutral-500 flex items-center gap-1">👍 {r.upvotes}</span>
+                          <span className="text-neutral-400 bg-neutral-900/40 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">👍 {r.upvotes} Votes</span>
+                          
                           {r.type === 'comment' && (
-                            <span className="text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">Comment</span>
+                            <span className="text-neutral-300 bg-neutral-900/60 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">Comment</span>
                           )}
                         </div>
                       </a>
@@ -914,18 +847,21 @@ function SearchPageContent() {
               </div>
 
               {/* Right Column: Advanced Filters */}
-              <div className="w-full lg:w-[240px] shrink-0 space-y-6 hidden lg:block">
-                <div>
-                  <h4 className="text-[13px] font-bold uppercase tracking-wider text-neutral-400 mb-3">Time Range</h4>
+              <div className="w-full lg:w-[260px] shrink-0 space-y-6 hidden lg:block">
+                <div className="bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 rounded-3xl p-6 space-y-5">
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Filter Spectrum</h4>
                   <div className="flex flex-col gap-1.5">
                     {[
                       { id: 'all', label: 'Any time' },
-                      { id: 'week', label: 'Recent' }
+                      { id: 'week', label: 'Recent feed' }
                     ].map(opt => (
                       <button 
                         key={opt.id} 
-                        onClick={() => setDateRange(opt.id)} 
-                        className={`text-left text-[14px] px-3 py-2 rounded-lg transition-colors ${dateRange === opt.id ? 'bg-neutral-900 text-white font-bold border border-neutral-800' : 'text-neutral-500 hover:bg-neutral-900 hover:text-white'}`}
+                        onClick={() => {
+                          setDateRange(opt.id);
+                          onSearch(undefined, { dateRange: opt.id });
+                        }} 
+                        className={`text-left text-[13px] tracking-wide px-4 py-2.5 rounded-xl transition-all duration-200 border ${dateRange === opt.id ? 'bg-white text-black font-bold border-white shadow-[0_2px_12px_rgba(255,255,255,0.15)] scale-[1.02]' : 'text-neutral-400 hover:text-white bg-transparent border-transparent hover:bg-neutral-900/40'}`}
                       >
                         {opt.label}
                       </button>

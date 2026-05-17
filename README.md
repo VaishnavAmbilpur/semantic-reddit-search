@@ -8,10 +8,10 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ## 🚀 Features
 
-* **Permanent Deep Scan Mode:** Every search uses the full Google Discovery + Jina AI Reranking pipeline — no "Normal" vs "Hybrid" choice needed. Maximum precision, always.
+* **Permanent Deep Scan Mode:** Every search uses the full Google Discovery + Hugging Face Reranking pipeline — no "Normal" vs "Hybrid" choice needed. Maximum precision, always.
 * **Google-Powered Discovery (SerpApi):** Instead of hitting Reddit's own search, Redex uses SerpApi to run a `site:reddit.com` Google search, finding the highest-quality threads Google already knows about.
 * **ArcticShift Fallback:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of 30–45 top candidates per query.
-* **Jina AI Reranker:** After merging, the top 25 results are re-scored by Jina AI's cross-encoder reranker, ensuring the absolute most relevant results are surfaced at the top.
+* **Hugging Face Reranker:** After merging, the top 25 results are re-scored by Hugging Face's cross-encoder reranker, ensuring the absolute most relevant results are surfaced at the top.
 * **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Neon. Only posts with ≥5 upvotes are persisted to keep the free-tier database clean.
 * **Token-Efficient Architecture:** Subsequent filter changes (All/Posts/Comments, Any Time/Recent) are performed **client-side** at zero token cost. The AI pipeline is only invoked for new queries.
 * **Client-Side Filtering:** Tab switching (All, Posts, Comments) and Time Range (Any time, Recent) filters operate purely in the browser on already-loaded results — 0 extra API calls.
@@ -31,7 +31,7 @@ User searches "best mechanical keyboard"
 [0] Environment & Input Validation (API key guard)
         │
         ▼
-[1] Jina AI: Single query embedding (shared by both lanes)
+[1] Hugging Face: Single query embedding (shared by both lanes)
         │
    ┌────┴──────────────────────────────┐
    ▼                                    ▼
@@ -39,14 +39,14 @@ DB Lane (pgvector)              Google + ArcticShift (Live)
 Semantic cosine search          SerpApi: top 30 Google results
 on indexed posts+comments       ArcticShift: top 15 archive posts
                                 → Merge + Deduplicate → top 35
-                                → Jina embed each → cosine score
+                                → Hugging Face embed each → cosine score
    └────────────┬─────────────────────┘
                 ▼
    Merge + deduplicate (ID-based)
    Sort: Upvotes → Similarity
                 │
                 ▼
-   [PASS 2] Jina Reranker on top 25 results
+   [PASS 2] Hugging Face Reranker on top 25 results
    (Cross-encoder for precision ranking)
                 │
                 ▼
@@ -69,8 +69,8 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 | Framework | [Next.js 16 (App Router)](https://nextjs.org/) |
 | Database | [PostgreSQL (Neon)](https://neon.tech/) + `pgvector` HNSW |
 | ORM | [Prisma 6](https://www.prisma.io/) |
-| AI Embeddings | [Jina AI](https://jina.ai/) `jina-embeddings-v3` (768 dims) |
-| AI Reranking | [Jina AI Reranker](https://jina.ai/reranker) `jina-reranker-v2-base-multilingual` |
+| AI Embeddings | [Hugging Face](https://huggingface.co/) `jina-embeddings-v3` (768 dims) |
+| AI Reranking | [Hugging Face Reranker](https://huggingface.co/reranker) `jina-reranker-v2-base-multilingual` |
 | Google Search | [SerpApi](https://serpapi.com/) `site:reddit.com` strategy |
 | Message Queue | [Upstash QStash](https://upstash.com/) |
 | Caching | [Upstash Redis](https://upstash.com/) |
@@ -93,7 +93,7 @@ Copy the example environment file and fill in your API keys. **Do not wrap value
 ```env
 DATABASE_URL=postgresql://...
 SERPAPI_API_KEY=your_serpapi_key
-JINA_API_KEY=your_jina_key
+HF_API_KEY=your_jina_key
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
 QSTASH_TOKEN=...
@@ -130,7 +130,7 @@ All services have generous free tiers — running Redex costs $0.
 |---|---|---|
 | `DATABASE_URL` | [neon.tech](https://neon.tech) | Neon PostgreSQL connection string (no quotes) |
 | `SERPAPI_API_KEY` | [serpapi.com](https://serpapi.com) | Google Search via SerpApi (100 free searches/month) |
-| `JINA_API_KEY` | [jina.ai](https://jina.ai) | Jina AI embeddings + reranking (2M free tokens) |
+| `HF_API_KEY` | [huggingface.co](https://huggingface.co) | Hugging Face embeddings + reranking (2M free tokens) |
 | `UPSTASH_REDIS_REST_URL` | [upstash.com](https://upstash.com) | Redis REST endpoint |
 | `UPSTASH_REDIS_REST_TOKEN` | [upstash.com](https://upstash.com) | Redis REST token |
 | `QSTASH_TOKEN` | [upstash.com](https://upstash.com) | QStash publish token |
@@ -148,7 +148,7 @@ All services have generous free tiers — running Redex costs $0.
 ### Public (no auth required)
 | Endpoint | Description |
 |---|---|
-| `GET /api/search?q=...` | Deep Scan search — Google + ArcticShift + Jina Rerank, merged and ranked |
+| `GET /api/search?q=...` | Deep Scan search — Google + ArcticShift + Hugging Face Rerank, merged and ranked |
 | `GET /api/search?q=...&refresh=true` | Force a fresh live scan, bypassing cache |
 | `GET /api/subreddits` | List all indexed subreddits |
 | `GET /api/suggest?q=...` | Auto-suggestions from indexed post titles |
@@ -185,12 +185,12 @@ Redex is designed to maximize your free-tier AI token usage:
 
 | Operation | Estimated Token Cost |
 |---|---|
-| Query Embedding (Jina) | ~50 tokens |
+| Query Embedding (Hugging Face) | ~50 tokens |
 | Live Post Embeddings (35 posts × ~200 tokens) | ~7,000 tokens |
-| Jina Reranking (top 25 results) | ~25,000 tokens |
+| Hugging Face Reranking (top 25 results) | ~25,000 tokens |
 | **Total per Deep Scan** | **~32,000–35,000 tokens** |
 
-With Jina AI's **2,000,000 free token** allowance, this gives you approximately **57–62 full Deep Scans** before needing a top-up.
+With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **57–62 full Deep Scans** before needing a top-up.
 
 **Token Savings:**
 - Switching tabs (All/Posts/Comments): **0 tokens** (client-side)
@@ -213,7 +213,7 @@ redex/
     │   ├── page.tsx             # Search UI (landing → results, client-side filtering)
     │   ├── admin/page.tsx       # Admin dashboard
     │   └── api/
-    │       ├── search/          # Deep Scan orchestrator (Google + ArcticShift + Jina)
+    │       ├── search/          # Deep Scan orchestrator (Google + ArcticShift + Hugging Face)
     │       ├── subreddits/      # Public subreddit list
     │       ├── suggest/         # Search suggestions
     │       ├── admin/           # Protected admin routes
@@ -225,7 +225,7 @@ redex/
         ├── arcticShift.ts       # Arctic Shift historical archive client (15s timeout)
         ├── googleSearch.ts      # SerpApi Google search client (site:reddit.com)
         ├── search.ts            # mergeAndRank(), semanticSearchWithVector()
-        ├── embeddings.ts        # Jina AI embedding + reranking client (with console logs)
+        ├── embeddings.ts        # Hugging Face embedding + reranking client (with console logs)
         ├── cache.ts             # Redis cache helpers
         ├── prisma.ts            # Prisma singleton
         ├── redis.ts             # Redis singleton
