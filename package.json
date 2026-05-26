@@ -10,6 +10,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@prisma/client": "^6.0.0",
     "@upstash/qstash": "^2.10.1",
     "@upstash/redis": "^1.38.0",

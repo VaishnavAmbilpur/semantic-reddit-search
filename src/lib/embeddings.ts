@@ -62,16 +62,22 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
 
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
         const batch = texts.slice(i, i + BATCH_SIZE);
-        const data = await hfFetch(url, { inputs: batch.map(t => t.slice(0, 8000)) });
-        allVectors.push(...data);
+        try {
+            const data = await hfFetch(url, { inputs: batch.map(t => t.slice(0, 8000)) });
+            allVectors.push(...data);
+        } catch (error) {
+            console.warn(`[HF API Failed for batch] Falling back to local transformers... (${(error as Error).message})`);
+            const localData = await generateLocalEmbeddings(batch);
+            allVectors.push(...localData);
+        }
         
         if (i + BATCH_SIZE < texts.length) {
-            console.log(`📦 HF Embedded batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+            console.log(`📦 Embedded batch ${Math.floor(i / BATCH_SIZE) + 1}`);
             await sleep(1000); // 1s breather between batches for rate limits
         }
     }
 
-    console.log(`✅ Embedded ${allVectors.length} texts via Hugging Face`);
+    console.log(`✅ Embedded ${allVectors.length} texts`);
     return allVectors;
 }
 
@@ -79,15 +85,25 @@ export async function generateSearchEmbeddings(texts: string[]): Promise<number[
     if (texts.length === 0) return [];
     const url = 'https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5';
     console.log(`[HF] Generating embeddings for ${texts.length} search items...`);
-    const data = await hfFetch(url, { inputs: texts.map(t => t.slice(0, 1000)) });
-    return data;
+    try {
+        const data = await hfFetch(url, { inputs: texts.map(t => t.slice(0, 1000)) });
+        return data;
+    } catch (error) {
+        console.warn(`[HF API Failed] Falling back to local transformers for ${texts.length} items... (${(error as Error).message})`);
+        return await generateLocalEmbeddings(texts);
+    }
 }
 
 export async function generateQueryEmbedding(query: string): Promise<number[]> {
     const url = 'https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5';
     console.log(`[HF] Generating query embedding...`);
-    const data = await hfFetch(url, { inputs: [query.slice(0, 1000)] });
-    return data[0];
+    try {
+        const data = await hfFetch(url, { inputs: [query.slice(0, 1000)] });
+        return data[0];
+    } catch (error) {
+        console.warn(`[HF API Failed] Falling back to local transformers... (${(error as Error).message})`);
+        return await generateLocalQueryEmbedding(query);
+    }
 }
 
 export async function rerankResults(query: string, documents: { id: string; text: string }[]): Promise<{ id: string; score: number }[]> {
@@ -108,8 +124,66 @@ export async function rerankResults(query: string, documents: { id: string; text
             return { id: d.id, score };
         });
     } catch (error) {
-        console.error('[HF Rerank Exception]', error);
-        // Fallback to 0 score if reranker fails
+        console.warn(`[HF API Failed] Falling back to local reranking for ${documents.length} items... (${(error as Error).message})`);
+        return await localRerankResults(query, documents);
+    }
+}
+
+// --- Local Fallback Implementation using @huggingface/transformers ---
+let _extractor: any = null;
+let _reranker: any = null;
+
+async function getLocalExtractor() {
+    if (!_extractor) {
+        const { pipeline } = await import('@huggingface/transformers');
+        _extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5');
+    }
+    return _extractor;
+}
+
+async function getLocalReranker() {
+    if (!_reranker) {
+        const { pipeline } = await import('@huggingface/transformers');
+        _reranker = await pipeline('text-classification', 'Xenova/bge-reranker-base');
+    }
+    return _reranker;
+}
+
+async function generateLocalEmbeddings(texts: string[]): Promise<number[][]> {
+    const extractor = await getLocalExtractor();
+    const results: number[][] = [];
+    for (const text of texts) {
+        const output = await extractor(text, { pooling: 'cls', normalize: true });
+        results.push(Array.from(output.data) as number[]);
+    }
+    return results;
+}
+
+async function generateLocalQueryEmbedding(query: string): Promise<number[]> {
+    const extractor = await getLocalExtractor();
+    const output = await extractor(query, { pooling: 'cls', normalize: true });
+    return Array.from(output.data) as number[];
+}
+
+async function localRerankResults(query: string, documents: { id: string; text: string }[]): Promise<{ id: string; score: number }[]> {
+    if (documents.length === 0) return [];
+    try {
+        const reranker = await getLocalReranker();
+        const results = await Promise.all(
+            documents.map(async (d) => {
+                try {
+                    const out = await reranker([query, d.text.slice(0, 1000)]);
+                    const score = Array.isArray(out) ? out[0]?.score ?? 0 : out?.score ?? 0;
+                    return { id: d.id, score };
+                } catch (err) {
+                    return { id: d.id, score: 0 };
+                }
+            })
+        );
+        return results;
+    } catch (e) {
+        console.error('[Local Rerank Exception]', e);
         return documents.map(d => ({ id: d.id, score: 0 }));
     }
 }
+

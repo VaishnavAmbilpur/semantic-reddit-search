@@ -156,6 +156,24 @@ export async function GET(req: Request) {
       }
     }
 
+    // Sort according to date range (Anytime vs Recent)
+    if (dateRange !== 'all') {
+      results.sort((a, b) => new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime());
+    } else if (sort === 'relevance') {
+      results.sort((a, b) => b.similarity - a.similarity);
+    } else {
+      results.sort((a, b) => b.upvotes - a.upvotes);
+    }
+
+    // Force Live results to always be at the top
+    results.sort((a, b) => {
+      if (a.isLive && !b.isLive) return -1;
+      if (!a.isLive && b.isLive) return 1;
+      return 0; // maintain relative order among live and among DB results
+    });
+
+
+
     const queryTime = Date.now() - start;
 
     // 6. Cache results

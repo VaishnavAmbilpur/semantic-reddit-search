@@ -172,24 +172,15 @@ export function mergeAndRank(
 
 
   if (dateRange === 'all') {
-    // ANYTIME: Pure top-votes priority. 
-    merged.sort((a, b) => b.upvotes - a.upvotes);
+    // ANYTIME: Ordered by relevance or top upvotes
+    if (sort === 'relevance') {
+      merged.sort((a, b) => b.similarity - a.similarity);
+    } else {
+      merged.sort((a, b) => b.upvotes - a.upvotes);
+    }
   } else {
-    // RECENT: Group by 4-hour buckets, then sort by upvotes within each bucket.
-    // This gives "Recent + Popular" instead of just "Newest + Random Noise".
-    const FOUR_HOURS = 4 * 60 * 60 * 1000;
-    merged.sort((a, b) => {
-      const timeA = new Date(a.redditCreatedAt).getTime();
-      const timeB = new Date(b.redditCreatedAt).getTime();
-      
-      const bucketA = Math.floor(timeA / FOUR_HOURS);
-      const bucketB = Math.floor(timeB / FOUR_HOURS);
-
-      if (bucketA !== bucketB) {
-        return bucketB - bucketA; // Newest bucket first
-      }
-      return b.upvotes - a.upvotes; // Most popular in that bucket
-    });
+    // RECENT: Ordered purely by recency (newest first)
+    merged.sort((a, b) => new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime());
   }
 
   return merged.slice(0, limit);
@@ -204,18 +195,11 @@ export async function semanticSearchWithVector(
   filters: SearchFilters
 ): Promise<SearchResult[]> {
   const vecStr = `[${queryVector.join(',')}]`;
-  const { limit = 20, minUpvotes = 0, subreddits = [], type = 'all', dateRange = 'all' } = filters;
+  const { limit = 20, minUpvotes = 0, subreddits = [], type = 'all', dateRange = 'all', sort = 'relevance' } = filters;
 
-  let dateFilter: (alias: string) => string;
-  if (dateRange !== 'all') {
-    const startDate = new Date();
-    if (dateRange === 'week') startDate.setDate(new Date().getDate() - 7);
-    if (dateRange === 'month') startDate.setMonth(new Date().getMonth() - 1);
-    if (dateRange === 'year') startDate.setFullYear(new Date().getFullYear() - 1);
-    dateFilter = (alias: string) => `AND ${alias}."redditCreatedAt" >= '${startDate.toISOString()}'`;
-  } else {
-    dateFilter = () => '';
-  }
+  // Disable strict SQL date cutoff to keep the same number of posts as Anytime,
+  // but we will still sort them by recency in the application.
+  const dateFilter = (_alias?: string) => '';
 
   const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
 
@@ -232,7 +216,7 @@ export async function semanticSearchWithVector(
        WHERE c.embedding IS NOT NULL AND c.upvotes >= $2 ${dateFilter('c')} ${subFilter})` : ''}
     )
     SELECT * FROM results 
-    ORDER BY upvotes DESC, "redditCreatedAt" DESC, similarity DESC
+    ORDER BY ${sort === 'relevance' ? 'similarity DESC' : 'upvotes DESC, "redditCreatedAt" DESC'}
     LIMIT $3
   `, vecStr, minUpvotes, limit, subreddits);
 }
