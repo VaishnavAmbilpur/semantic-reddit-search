@@ -6,13 +6,13 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ---
 
-## 🚀 Features
+## Features
 
 * **Permanent Deep Scan Mode:** Every search uses the full Google Discovery + Hugging Face Reranking pipeline — no "Normal" vs "Hybrid" choice needed. Maximum precision, always.
 * **Google-Powered Discovery (SerpApi):** Instead of hitting Reddit's own search, Redex uses SerpApi to run a `site:reddit.com` Google search, finding the highest-quality threads Google already knows about.
 * **ArcticShift Fallback:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of 30–45 top candidates per query.
 * **Hugging Face Reranker:** After merging, the top 25 results are re-scored by Hugging Face's cross-encoder reranker, ensuring the absolute most relevant results are surfaced at the top.
-* **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Neon. Only posts with ≥5 upvotes are persisted to keep the free-tier database clean.
+* **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Prisma Postgres. Only posts with ≥50 upvotes are persisted (up to a hard cap of 25,000 posts in the DB) to protect the database storage limits.
 * **Token-Efficient Architecture:** Subsequent filter changes (All/Posts/Comments, Any Time/Recent) are performed **client-side** at zero token cost. The AI pipeline is only invoked for new queries.
 * **Client-Side Filtering:** Tab switching (All, Posts, Comments) and Time Range (Any time, Recent) filters operate purely in the browser on already-loaded results — 0 extra API calls.
 * **Relevance Guard:** Content marked `[removed]` is filtered from results. NSFW content is shown by default to ensure maximum result breadth.
@@ -22,7 +22,7 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ---
 
-## 🏗️ How It Works
+## How It Works
 
 ```
 User searches "best mechanical keyboard"
@@ -54,7 +54,7 @@ on indexed posts+comments       ArcticShift: top 15 archive posts
                 │
                 ▼ (background — after response sent)
    QStash → persist-live worker
-     → Filter: only posts with ≥5 upvotes saved to Neon
+     → Filter: only posts with ≥50 upvotes saved to Prisma Postgres (up to 25K total posts)
      → Trigger ArcticShift full index for new subreddits
 ```
 
@@ -62,12 +62,12 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Layer | Technology |
 |---|---|
 | Framework | [Next.js 16 (App Router)](https://nextjs.org/) |
-| Database | [PostgreSQL (Neon)](https://neon.tech/) + `pgvector` HNSW |
+| Database | [Prisma Postgres (PostgreSQL)](https://www.prisma.io/postgres) + `pgvector` HNSW |
 | ORM | [Prisma 6](https://www.prisma.io/) |
 | AI Embeddings | [Hugging Face](https://huggingface.co/) `jina-embeddings-v3` (768 dims) |
 | AI Reranking | [Hugging Face Reranker](https://huggingface.co/reranker) `jina-reranker-v2-base-multilingual` |
@@ -79,7 +79,7 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 
 ---
 
-## 💻 Local Development Setup
+## Local Development Setup
 
 ### 1. Clone the repository
 ```bash
@@ -91,7 +91,8 @@ npm install
 ### 2. Configure Environment Variables
 Copy the example environment file and fill in your API keys. **Do not wrap values in quotes.**
 ```env
-DATABASE_URL=postgresql://...
+DATABASE_URL=postgres://... (pooled connection, e.g. pooled.db.prisma.io)
+DIRECT_URL=postgres://... (direct connection, e.g. db.prisma.io)
 SERPAPI_API_KEY=your_serpapi_key
 HF_API_KEY=your_jina_key
 UPSTASH_REDIS_REST_URL=https://...
@@ -104,7 +105,7 @@ APP_URL=https://your-deployment-url.vercel.app
 ```
 
 ### 3. Setup the Database & Vector Extension
-Push the Prisma schema to your Neon PostgreSQL database, then enable the pgvector extension:
+Push the Prisma schema to your Prisma Postgres database, then enable the pgvector extension:
 ```bash
 npx prisma db push
 npx tsx prisma/setup-vectors.ts
@@ -122,13 +123,14 @@ Navigate to `http://localhost:3000` to use the search engine, or `http://localho
 
 ---
 
-## 🔑 Environment Variables
+## Environment Variables
 
 All services have generous free tiers — running Redex costs $0.
 
 | Variable | Where to get it | Purpose |
 |---|---|---|
-| `DATABASE_URL` | [neon.tech](https://neon.tech) | Neon PostgreSQL connection string (no quotes) |
+| `DATABASE_URL` | [Prisma Console](https://console.prisma.io/) | Prisma Postgres Pooled connection URL (no quotes) |
+| `DIRECT_URL` | [Prisma Console](https://console.prisma.io/) | Prisma Postgres Direct connection URL (no quotes) |
 | `SERPAPI_API_KEY` | [serpapi.com](https://serpapi.com) | Google Search via SerpApi (100 free searches/month) |
 | `HF_API_KEY` | [huggingface.co](https://huggingface.co) | Hugging Face embeddings + reranking (2M free tokens) |
 | `UPSTASH_REDIS_REST_URL` | [upstash.com](https://upstash.com) | Redis REST endpoint |
@@ -143,7 +145,7 @@ All services have generous free tiers — running Redex costs $0.
 
 ---
 
-## 🔌 API Overview
+## API Overview
 
 ### Public (no auth required)
 | Endpoint | Description |
@@ -175,11 +177,11 @@ All services have generous free tiers — running Redex costs $0.
 | Endpoint | Description |
 |---|---|
 | `POST /api/worker/index-subreddit` | Processes one time-based page from Arctic Shift |
-| `POST /api/worker/persist-live` | Saves live search results (≥5 upvotes) to Neon DB |
+| `POST /api/worker/persist-live` | Saves live search results (≥50 upvotes, capped at 25K total posts) to Prisma Postgres |
 
 ---
 
-## 🧠 Token Budget & Cost
+## Token Budget & Cost
 
 Redex is designed to maximize your free-tier AI token usage:
 
@@ -200,7 +202,7 @@ With Hugging Face's **2,000,000 free token** allowance, this gives you approxima
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 redex/
@@ -234,12 +236,12 @@ redex/
 
 ---
 
-## 🚢 Deployment Checklist (Vercel + Neon)
+## Deployment Checklist (Vercel + Prisma Postgres)
 
 1. **Push schema:** `npx prisma db push`
 2. **Add all environment variables** to Vercel dashboard (no quotes around values)
 3. **Set `APP_URL`** to your Vercel deployment URL (e.g. `https://redex.vercel.app`)
-4. **Verify Prisma:** Ensure `DATABASE_URL` starts with `postgresql://` or `postgres://`
+4. **Verify Prisma:** Ensure `DATABASE_URL` starts with `postgres://` and `DIRECT_URL` is set properly
 5. **Build test:** Run `npm run build` locally before deploying — must exit with code 0
 6. **QStash:** Update your QStash allowed domains to include your Vercel URL
 
@@ -247,6 +249,6 @@ redex/
 
 ---
 
-## 🛡️ License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.

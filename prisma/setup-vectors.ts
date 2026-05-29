@@ -16,7 +16,7 @@ async function setup() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "Post" ADD COLUMN "embedding" vector(768);`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "Comment" ADD COLUMN "embedding" vector(768);`);
 
-  // HNSW indexes (max 2000 dims on Neon, 768 is well within limit)
+  // HNSW indexes (max 2000 dims on Prisma Postgres, 768 is well within limit)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "posts_embedding_idx" ON "Post" USING hnsw ("embedding" vector_cosine_ops);`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "comments_embedding_idx" ON "Comment" USING hnsw ("embedding" vector_cosine_ops);`);
 

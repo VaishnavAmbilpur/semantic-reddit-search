@@ -76,6 +76,14 @@ export async function POST(req: Request) {
     vectors = await generateEmbeddings(texts);
   }
 
+  // Prisma Postgres storage protection: Hard cap on total posts in DB
+  const postCount = await prisma.post.count();
+  const POST_CAP = 25000;
+  if (postCount >= POST_CAP) {
+    console.log('[persist-live] DB cap reached, skipping persist.');
+    return Response.json({ skipped: true, reason: 'db_cap' });
+  }
+
   let savedCount = 0;
   for (let i = 0; i < newPosts.length; i++) {
     const post = newPosts[i];
@@ -97,27 +105,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // 5. Trigger Full Subreddit Indexing for discovered subreddits
-  for (const [subredditName] of bySubreddit) {
-    const subredditId = subredditMap.get(subredditName);
-    if (!subredditId) continue;
-
-    // Only queue if not indexed recently (last 7 days)
-    const activeJob = await prisma.indexingJob.findFirst({
-      where: { subredditId, status: { in: ['PENDING', 'ACTIVE'] } }
-    });
-
-    if (!activeJob) {
-      const job = await prisma.indexingJob.create({
-        data: { subredditId, status: 'PENDING' }
-      });
-
-      await qstash.publishJSON({
-        url: `${process.env.APP_URL}/api/worker/index-subreddit`,
-        body: { jobId: job.id, subredditId, subredditName, triggeredBy: 'organic' },
-      });
-    }
-  }
+  // Disabled: automatic subreddit indexing is disabled to save free tier operations.
 
   return Response.json({ success: true, saved: savedCount });
 }

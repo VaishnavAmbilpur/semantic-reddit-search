@@ -51,14 +51,14 @@ export async function GET(req: Request) {
   // 1.5 Global Search Limit Check
   let searchesRemaining = await redis.get<number>('global_searches_remaining');
   if (searchesRemaining === null) {
-    await redis.set('global_searches_remaining', 100);
-    searchesRemaining = 100;
+    await redis.set('global_searches_remaining', 50, { ex: 86400 }); // 50/day, resets in 24h
+    searchesRemaining = 50;
   }
   
   if (searchesRemaining <= 0) {
     return Response.json({ 
       error: 'Global Search Limit Reached',
-      details: 'The global pool of 100 searches has been exhausted. Please wait for the next reset.'
+      details: 'The global pool of 50 searches has been exhausted. Please wait for the next reset.'
     }, { status: 403 });
   }
 
@@ -96,8 +96,8 @@ export async function GET(req: Request) {
         }
       });
 
-      // Optimization: Limit to top 20 candidates for AI processing (Saves Tokens)
-      const topPosts = posts.slice(0, 20);
+      // Optimization: Limit to top 10 candidates for AI processing (Saves Tokens)
+      const topPosts = posts.slice(0, 10);
 
       // Score and convert to SearchResult format
       const texts = topPosts.map((p: ArcticPost) => `${p.title} ${p.selftext || ''}`.slice(0, 600));
@@ -131,7 +131,7 @@ export async function GET(req: Request) {
 
     // 5. SECOND PASS: Hugging Face Reranker (The Accuracy Booster)
     // We rerank the top candidates to ensure the best answers are at the absolute top
-    if (results.length > 1) {
+    if (results.length > 3 && dbResults.length > 0) {
       const docsToRerank = results.slice(0, 10).map(r => {
         const text = `${r.title || ''} ${r.content || ''}`.trim().slice(0, 1000);
         return {
@@ -186,7 +186,7 @@ export async function GET(req: Request) {
         body: {
           query: q,
           livePosts: liveResults
-            .filter(r => r.upvotes >= 5) // Storage Optimization: Only save quality posts to Neon
+            .filter(r => r.upvotes >= 50) // Storage Optimization: Only save quality posts to Prisma Postgres
             .map((r: SearchResult) => ({
               id: r.id,
               title: r.title,

@@ -13,5 +13,5 @@ export async function getCachedResults(key: string) {
 }
 
 export async function setCachedResults(key: string, data: { results: SearchResult[], queryTime: number }) {
-  await redis.set(key, JSON.stringify(data), { ex: 60 }); // 60s TTL
+  await redis.set(key, JSON.stringify(data), { ex: 600 }); // 600s TTL (10 minutes)
 }

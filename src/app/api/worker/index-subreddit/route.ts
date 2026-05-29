@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const isValid = await qstashReceiver.verify({ signature: sig, body });
   if (!isValid) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { jobId, subredditId, subredditName, beforeTimestamp } = JSON.parse(body);
+  const { jobId, subredditId, subredditName, beforeTimestamp, maxChunks = 10 } = JSON.parse(body);
 
   // 0. Check if job was stopped by Admin
   const job = await prisma.indexingJob.findUnique({ where: { id: jobId } });
@@ -25,14 +25,8 @@ export async function POST(req: Request) {
   const posts = await fetchPosts(subredditName, beforeTimestamp, 20);
 
   if (posts.length > 0) {
-    // 2. Fetch top 3 comments (Reduced from 5 for efficiency)
-    const commentsData = await Promise.all(
-      posts.map(async (p) => {
-        const comments = await fetchComments(p.id, 3);
-        return comments.map(c => ({ ...c, internalPostId: p.id }));
-      })
-    );
-    const allComments = commentsData.flat();
+    // Disabled: comment indexing is disabled to save free tier operations.
+    const allComments: any[] = [];
 
     // 3. Prepare all texts for embedding (Posts + Comments)
     // TRUNCATION: Save tokens by only embedding the first 500 chars
@@ -67,19 +61,27 @@ export async function POST(req: Request) {
     }
 
     // 5. Save Comments
+    // Collect all redditIds from this chunk's posts
+    const redditIds = posts.map(p => p.id);
+    // One query instead of 60
+    const postRecords = await prisma.post.findMany({
+      where: { redditId: { in: redditIds } },
+      select: { id: true, redditId: true },
+    });
+    const postIdMap = new Map(postRecords.map(p => [p.redditId, p.id]));
+
     for (let i = 0; i < allComments.length; i++) {
       const c = allComments[i];
       const vec = `[${commentVectors[i].join(',')}]`;
       
-      // We need the internal DB ID of the post, so we look it up by redditId
-      const post = await prisma.post.findUnique({ where: { redditId: c.internalPostId }, select: { id: true } });
-      if (!post) continue;
+      const internalPostId = postIdMap.get(c.internalPostId);
+      if (!internalPostId) continue;
 
       await prisma.$executeRawUnsafe(
         `INSERT INTO "Comment" (id, "redditId", content, upvotes, author, "postId", "redditCreatedAt", embedding)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector)
         ON CONFLICT ("redditId") DO NOTHING`,
-        generateId(), c.id, c.body, c.score, c.author, post.id, new Date(c.created_utc * 1000), vec
+        generateId(), c.id, c.body, c.score, c.author, internalPostId, new Date(c.created_utc * 1000), vec
       );
     }
 
@@ -94,17 +96,19 @@ export async function POST(req: Request) {
   }
 
   // 7. Chain or Finish
-  const isLastPage = posts.length < 20;
+  const finalCheck = await prisma.indexingJob.findUnique({ where: { id: jobId } });
+  const isAtCap = finalCheck ? finalCheck.chunksCompleted >= maxChunks : false;
+  const isLastPage = posts.length < 20 || isAtCap;
+
   if (!isLastPage) {
     const oldestTimestamp = Math.min(...posts.map(p => p.created_utc));
     await qstash.publishJSON({
       url: `${process.env.APP_URL}/api/worker/index-subreddit`,
-      body: { jobId, subredditId, subredditName, beforeTimestamp: oldestTimestamp },
-      delay: 15, // ← NEW: Wait 15s to stay under Token-Per-Minute limit
+      body: { jobId, subredditId, subredditName, beforeTimestamp: oldestTimestamp, maxChunks },
+      delay: 15, // Wait 15s to stay under Token-Per-Minute limit
     });
   } else {
-    const finalCheck = await prisma.indexingJob.findUnique({ where: { id: jobId } });
-    if (finalCheck?.status !== 'FAILED') {
+    if (finalCheck && finalCheck.status !== 'FAILED') {
       await prisma.indexingJob.update({
         where: { id: jobId },
         data: { status: 'COMPLETED', completedAt: new Date() },

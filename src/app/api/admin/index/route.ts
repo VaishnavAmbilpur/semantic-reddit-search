@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { name } = await req.json();
+  const { name, maxChunks = 10 } = await req.json();
 
   // 2. Validate subreddit via Arctic Shift
   const meta = await validateSubreddit(name);
@@ -26,10 +26,11 @@ export async function POST(req: Request) {
     data: { subredditId: subreddit.id, status: 'PENDING' },
   });
 
-  // 4. Trigger the first worker call via QStash
+  // Trigger the first worker call via QStash with 1 hour delay to avoid active demo hours.
   await qstash.publishJSON({
     url: `${process.env.APP_URL}/api/worker/index-subreddit`,
-    body: { jobId: job.id, subredditId: subreddit.id, subredditName: name },
+    body: { jobId: job.id, subredditId: subreddit.id, subredditName: name, maxChunks },
+    delay: 3600,
   });
 
   return Response.json({ jobId: job.id, subreddit: name }, { status: 202 });
