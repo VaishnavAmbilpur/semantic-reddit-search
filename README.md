@@ -79,7 +79,7 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 
 ---
 
-## 💻 Local Development Setup
+## Local Development Setup
 
 ### 1. Clone the repository
 ```bash
@@ -246,7 +246,3 @@ redex/
 > **Vercel Function Timeout:** The search API is tuned to complete within 8–9 seconds (well within the 10s Hobby plan limit). The pipeline processes 35 candidates + reranks 25 results.
 
 ---
-
-## 🛡️ License
-
-Distributed under the MIT License. See `LICENSE` for more information.
