@@ -6,7 +6,7 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ---
 
-## Features
+## 🚀 Features
 
 * **Permanent Deep Scan Mode:** Every search uses the full Google Discovery + Hugging Face Reranking pipeline — no "Normal" vs "Hybrid" choice needed. Maximum precision, always.
 * **Google-Powered Discovery (SerpApi):** Instead of hitting Reddit's own search, Redex uses SerpApi to run a `site:reddit.com` Google search, finding the highest-quality threads Google already knows about.
@@ -22,7 +22,7 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ---
 
-## How It Works
+## 🏗️ How It Works
 
 ```
 User searches "best mechanical keyboard"
@@ -62,7 +62,7 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 
 ---
 
-## Technology Stack
+## 🛠️ Technology Stack
 
 | Layer | Technology |
 |---|---|
@@ -123,7 +123,7 @@ Navigate to `http://localhost:3000` to use the search engine, or `http://localho
 
 ---
 
-## Environment Variables
+## 🔑 Environment Variables
 
 All services have generous free tiers — running Redex costs $0.
 
@@ -181,7 +181,7 @@ All services have generous free tiers — running Redex costs $0.
 
 ---
 
-## Token Budget & Cost
+## 🧠 Token Budget & Cost
 
 Redex is designed to maximize your free-tier AI token usage:
 
@@ -202,7 +202,7 @@ With Hugging Face's **2,000,000 free token** allowance, this gives you approxima
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 redex/
@@ -236,7 +236,7 @@ redex/
 
 ---
 
-## Deployment Checklist (Vercel + Prisma Postgres)
+## 🚢 Deployment Checklist (Vercel + Neon)
 
 1. **Push schema:** `npx prisma db push`
 2. **Add all environment variables** to Vercel dashboard (no quotes around values)
@@ -249,6 +249,6 @@ redex/
 
 ---
 
-## License
+## 🛡️ License
 
 Distributed under the MIT License. See `LICENSE` for more information.
