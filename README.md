@@ -8,17 +8,19 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ## Features
 
-* **Permanent Deep Scan Mode:** Every search uses the full Google Discovery + Hugging Face Reranking pipeline — no "Normal" vs "Hybrid" choice needed. Maximum precision, always.
+* **Optimized Single-Roundtrip Pipeline:** Every query runs in a parallelized pipeline. To optimize speed and save token costs, the second-pass Hugging Face reranker is disabled—cutting search latency by 1,500ms while keeping a single batched embedding call.
 * **Google-Powered Discovery (SerpApi):** Instead of hitting Reddit's own search, Redex uses SerpApi to run a `site:reddit.com` Google search, finding the highest-quality threads Google already knows about.
-* **ArcticShift Fallback:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of 30–45 top candidates per query.
-* **Hugging Face Reranker:** After merging, the top 25 results are re-scored by Hugging Face's cross-encoder reranker, ensuring the absolute most relevant results are surfaced at the top.
+* **ArcticShift Fallback & Recall Boost:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of up to 45 top candidates per query.
 * **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Prisma Postgres. Only posts with ≥50 upvotes are persisted (up to a hard cap of 25,000 posts in the DB) to protect the database storage limits.
 * **Token-Efficient Architecture:** Subsequent filter changes (All/Posts/Comments, Any Time/Recent) are performed **client-side** at zero token cost. The AI pipeline is only invoked for new queries.
 * **Client-Side Filtering:** Tab switching (All, Posts, Comments) and Time Range (Any time, Recent) filters operate purely in the browser on already-loaded results — 0 extra API calls.
+* **User Trust Signals:** Search result cards display core trust signals (subreddit tags, upvotes, relative time-ago stamps, comment counts) alongside visual source badges (`Live` vs `Semantic Index`) for complete data origin transparency.
+* **Zero-Auth Bookmark System:** Built-in client-side bookmarking with LocalStorage persistence. A sticky Bookmarks panel persists in the sidebar to keep track of curated threads.
+* **Search History Dropdown:** Access previous searches instantly via a history dropdown that floats below the search bar when focused empty.
+* **Production Observability & Telemetry Dashboard:** Password-protected admin system console (`/admin`) loaded with health check indicators for Redis, database (Prisma), PullPush, and Hugging Face, alongside query analytics (search volume, no-result rates, latency metrics, and trending terms).
 * **Relevance Guard:** Content marked `[removed]` is filtered from results. NSFW content is shown by default to ensure maximum result breadth.
 * **Sub-10ms Caching:** Integrates Upstash Redis to cache hybrid search results — repeat queries go from ~7000ms → <10ms.
 * **Radar Loading UX:** A premium Neural Scan animation with live status messages communicates search progress.
-* **Secure Admin Console:** Password-protected dashboard to trigger subreddit indexing, monitor background jobs, and inspect the vector database.
 
 ---
 
@@ -46,11 +48,10 @@ on indexed posts+comments       ArcticShift: top 15 archive posts
    Sort: Upvotes → Similarity
                 │
                 ▼
-   [PASS 2] Hugging Face Reranker on top 25 results
-   (Cross-encoder for precision ranking)
-                │
-                ▼
-        Return results to user
+    (Hugging Face Reranker Pass 2 is bypassed to keep search instant)
+                 │
+                 ▼
+         Return results to user
                 │
                 ▼ (background — after response sent)
    QStash → persist-live worker
@@ -69,8 +70,8 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 | Framework | [Next.js 16 (App Router)](https://nextjs.org/) |
 | Database | [Prisma Postgres (PostgreSQL)](https://www.prisma.io/postgres) + `pgvector` HNSW |
 | ORM | [Prisma 6](https://www.prisma.io/) |
-| AI Embeddings | [Hugging Face](https://huggingface.co/) `jina-embeddings-v3` (768 dims) |
-| AI Reranking | [Hugging Face Reranker](https://huggingface.co/reranker) `jina-reranker-v2-base-multilingual` |
+| AI Embeddings | [Hugging Face](https://huggingface.co/) `BAAI/bge-base-en-v1.5` (768 dims) |
+| AI Reranking | Hugging Face Reranker (Disabled for speed/budget optimization) |
 | Google Search | [SerpApi](https://serpapi.com/) `site:reddit.com` strategy |
 | Message Queue | [Upstash QStash](https://upstash.com/) |
 | Caching | [Upstash Redis](https://upstash.com/) |
@@ -188,11 +189,11 @@ Redex is designed to maximize your free-tier AI token usage:
 | Operation | Estimated Token Cost |
 |---|---|
 | Query Embedding (Hugging Face) | ~50 tokens |
-| Live Post Embeddings (35 posts × ~200 tokens) | ~7,000 tokens |
-| Hugging Face Reranking (top 25 results) | ~25,000 tokens |
-| **Total per Deep Scan** | **~32,000–35,000 tokens** |
+| Live Post Embeddings (15 posts × ~200 tokens) | ~3,000 tokens |
+| Hugging Face Reranking (Disabled) | 0 tokens |
+| **Total per Deep Scan** | **~3,050 tokens** |
 
-With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **57–62 full Deep Scans** before needing a top-up.
+With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **650+ full Deep Scans** (over 10x savings compared to reranked pipeline) before needing any top-up.
 
 **Token Savings:**
 - Switching tabs (All/Posts/Comments): **0 tokens** (client-side)
