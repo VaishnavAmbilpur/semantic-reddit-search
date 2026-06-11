@@ -93,7 +93,7 @@ export async function searchPostsGlobal(
 
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000), // reduce from 15s → 8s
     });
 
     if (!res.ok) {
@@ -102,6 +102,13 @@ export async function searchPostsGlobal(
 
     const data = await res.json();
     const posts = (data?.data as PullPushPost[]) || [];
+
+    try {
+      const { redis } = await import('./redis');
+      await redis.set('pullpush:status', 'ok', { ex: 300 });
+    } catch (redisErr) {
+      console.warn('[PullPush] Redis status update failed:', redisErr);
+    }
 
     return posts.map((p) => ({
       id:           p.id,
@@ -120,6 +127,14 @@ export async function searchPostsGlobal(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Search Error]:', message);
+
+    try {
+      const { redis } = await import('./redis');
+      await redis.set('pullpush:status', 'down', { ex: 300 });
+    } catch (redisErr) {
+      console.warn('[PullPush] Redis status update failed:', redisErr);
+    }
+
     return [];
   }
 }

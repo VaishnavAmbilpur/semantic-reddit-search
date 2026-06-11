@@ -19,6 +19,7 @@ export interface SearchResult {
   content: string | null;
   url: string;
   upvotes: number;
+  commentCount: number;
   author: string;
   redditCreatedAt: string;
   subreddit: string;
@@ -51,6 +52,7 @@ export async function fetchAndScoreLivePosts(query: string, queryVector: number[
     content: p.selftext,
     url: `https://reddit.com${p.permalink}`,
     upvotes: p.score,
+    commentCount: p.num_comments || 0,
     author: p.author,
     subreddit: p.subreddit,
     redditCreatedAt: new Date(p.created_utc * 1000).toISOString(),
@@ -87,7 +89,7 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
       ${(type === 'all' || type === 'post') ? `
       (
         SELECT 
-          p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p.author,
+          p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p."commentCount", p.author,
           p."redditCreatedAt", s.name as subreddit,
           1 - (p.embedding <=> $1::vector) as similarity
         FROM "Post" p
@@ -103,7 +105,7 @@ export async function semanticSearch(query: string, filters: SearchFilters = {})
       (
         SELECT 
           c.id, 'comment' as type, null as title, c.content, 
-          p.url, c.upvotes, c.author,
+          p.url, c.upvotes, 0 as "commentCount", c.author,
           c."redditCreatedAt", s.name as subreddit,
           1 - (c.embedding <=> $1::vector) as similarity
         FROM "Comment" c
@@ -150,24 +152,17 @@ export function mergeAndRank(
   const allMerged = [...seen.values()];
   
   // DYNAMIC THRESHOLD:
-  // 1. If upvotes >= 100, we accept 25% similarity (Community Favorites)
-  // 2. Otherwise, we require 30% similarity (Semantic Precision - Loosened for more results)
+  // BAAI/bge-base-en-v1.5 typical cosine similarities:
+  // - >= 0.25 is a good semantic match.
+  // - >= 0.20 is acceptable for high upvote posts (>= 100 upvotes).
   let merged = allMerged.filter(r => {
-    if (r.upvotes >= 100) return r.similarity >= 0.25;
-    return r.similarity >= 0.30;
+    if (r.upvotes >= 100) return r.similarity >= 0.20;
+    return r.similarity >= 0.25;
   });
 
-  // Fallback: If nothing passes, show top 20 by relevance to avoid empty states
-  if (merged.length < 20 && allMerged.length > 0) {
-    const fallback = allMerged
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 20);
-    
-    // Merge fallback with existing matches, removing duplicates
-    const finalSet = new Map();
-    merged.forEach(m => finalSet.set(m.id, m));
-    fallback.forEach(f => { if (!finalSet.has(f.id)) finalSet.set(f.id, f); });
-    merged = Array.from(finalSet.values());
+  // Fallback: If ANY results were filtered out, use full pool as fallback
+  if (merged.length < allMerged.length && allMerged.length > 0) {
+    merged = allMerged.sort((a, b) => b.similarity - a.similarity);
   }
 
 
@@ -206,12 +201,12 @@ export async function semanticSearchWithVector(
   return await prisma.$queryRawUnsafe(`
     WITH results AS (
       ${(type === 'all' || type === 'post') ? `
-      (SELECT p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p.author, p."redditCreatedAt", s.name as subreddit, 1 - (p.embedding <=> $1::vector) as similarity, false as "isLive"
+      (SELECT p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p."commentCount", p.author, p."redditCreatedAt", s.name as subreddit, 1 - (p.embedding <=> $1::vector) as similarity, false as "isLive"
        FROM "Post" p JOIN "Subreddit" s ON p."subredditId" = s.id
        WHERE p.embedding IS NOT NULL AND p.upvotes >= $2 ${dateFilter('p')} ${subFilter})` : ''}
       ${type === 'all' ? 'UNION ALL' : ''}
       ${(type === 'all' || type === 'comment') ? `
-      (SELECT c.id, 'comment' as type, null as title, c.content, p.url, c.upvotes, c.author, c."redditCreatedAt", s.name as subreddit, 1 - (c.embedding <=> $1::vector) as similarity, false as "isLive"
+      (SELECT c.id, 'comment' as type, null as title, c.content, p.url, c.upvotes, 0 as "commentCount", c.author, c."redditCreatedAt", s.name as subreddit, 1 - (c.embedding <=> $1::vector) as similarity, false as "isLive"
        FROM "Comment" c JOIN "Post" p ON c."postId" = p.id JOIN "Subreddit" s ON p."subredditId" = s.id
        WHERE c.embedding IS NOT NULL AND c.upvotes >= $2 ${dateFilter('c')} ${subFilter})` : ''}
     )

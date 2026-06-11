@@ -26,11 +26,12 @@ export async function POST(req: Request) {
     data: { subredditId: subreddit.id, status: 'PENDING' },
   });
 
-  // Trigger the first worker call via QStash with 1 hour delay to avoid active demo hours.
+  // Trigger the first worker call via QStash with configurable delay to avoid active demo hours.
+  const delaySeconds = Number(process.env.INDEX_DELAY_SECONDS ?? 3600);
   await qstash.publishJSON({
     url: `${process.env.APP_URL}/api/worker/index-subreddit`,
     body: { jobId: job.id, subredditId: subreddit.id, subredditName: name, maxChunks },
-    delay: 3600,
+    delay: delaySeconds,
   });
 
   return Response.json({ jobId: job.id, subreddit: name }, { status: 202 });

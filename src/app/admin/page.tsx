@@ -2,6 +2,19 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
+interface HealthCheck {
+  service: string;
+  status: string;
+  error?: string;
+}
+
+interface AnalyticsData {
+  total: number;
+  noResults: number;
+  avgTime: number;
+  topQueries: { query: string; count: number }[];
+}
+
 interface IndexingJob {
   id: string;
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
@@ -18,6 +31,35 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
 
+  const [health, setHealth] = useState<{ healthy: boolean; checks: HealthCheck[] } | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [fetchingTelemetry, setFetchingTelemetry] = useState(false);
+
+  const fetchTelemetry = useCallback(async () => {
+    if (!secret) return;
+    setFetchingTelemetry(true);
+    try {
+      const healthRes = await fetch("/api/health");
+      const healthData = await healthRes.json();
+      setHealth(healthData);
+    } catch (e) {
+      console.error("Failed to fetch health check status", e);
+    }
+
+    try {
+      const analyticsRes = await fetch("/api/admin/analytics", {
+        headers: { Authorization: `Bearer ${secret}` }
+      });
+      if (analyticsRes.ok) {
+        const analyticsData = await analyticsRes.json();
+        setAnalytics(analyticsData);
+      }
+    } catch (e) {
+      console.error("Failed to fetch search analytics", e);
+    }
+    setFetchingTelemetry(false);
+  }, [secret]);
+
   const fetchJobs = useCallback(async () => {
     if (!secret) return;
     try {
@@ -29,6 +71,7 @@ export default function AdminPage() {
         setJobs(data.jobs);
         setIsAuthenticated(true);
         localStorage.setItem("redex_admin_secret", secret);
+        fetchTelemetry();
       } else {
         setIsAuthenticated(false);
       }
@@ -36,7 +79,7 @@ export default function AdminPage() {
       setIsAuthenticated(false);
     }
     setValidating(false);
-  }, [secret]);
+  }, [secret, fetchTelemetry]);
 
   useEffect(() => {
     const saved = localStorage.getItem("redex_admin_secret");
@@ -161,13 +204,99 @@ export default function AdminPage() {
         <main className="flex-1 w-full max-w-4xl mx-auto px-6 py-12 animate-in fade-in duration-700">
           <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-display font-semibold text-neutral-900 mb-2">System Settings</h1>
-              <p className="text-sm text-neutral-500">Manage your semantic index and monitor background ingestion jobs.</p>
+              <h1 className="text-3xl font-display font-semibold text-neutral-900 mb-2">System Dashboard</h1>
+              <p className="text-sm text-neutral-500">Monitor system health, analyze query telemetry, and manage the semantic index.</p>
             </div>
-            <button onClick={logout} className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg transition-colors">
-              Log Out
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { fetchJobs(); fetchTelemetry(); }}
+                disabled={fetchingTelemetry}
+                className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                {fetchingTelemetry ? 'Syncing...' : 'Refresh Status'}
+              </button>
+              <button onClick={logout} className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg transition-colors">
+                Log Out
+              </button>
+            </div>
           </div>
+
+          {/* DEPENDENCY HEALTH STATUS */}
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 mb-8 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold text-neutral-800 text-sm uppercase tracking-wider">Dependency Status</h3>
+              {health && (
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${health.healthy ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                  <span className={`w-2 h-2 rounded-full ${health.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'} inline-block`} />
+                  {health.healthy ? 'All Systems Operational' : 'Degraded Performance'}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {health?.checks.map(check => (
+                <div key={check.service} className="p-4 bg-neutral-50 rounded-xl border border-neutral-100 flex flex-col gap-1">
+                  <span className="text-xs text-neutral-400 uppercase tracking-wider font-semibold font-mono">{check.service}</span>
+                  <span className={`text-sm font-bold capitalize ${check.status === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {check.status === 'ok' ? 'Connected' : check.status}
+                  </span>
+                  {check.error && (
+                    <span className="text-[10px] text-rose-500 line-clamp-1" title={check.error}>
+                      {check.error}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {!health && (
+                <div className="col-span-4 py-4 text-center text-xs text-neutral-400 animate-pulse">Loading system status...</div>
+              )}
+            </div>
+          </div>
+
+          {/* TELEMETRY METRICS GRID */}
+          {analytics && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:border-neutral-300 transition-all">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono">Total Searches</span>
+                  <h3 className="text-3xl font-display font-bold text-neutral-900 mt-2">{analytics.total}</h3>
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-4 leading-relaxed">Search requests successfully recorded in query logs.</p>
+              </div>
+
+              <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:border-neutral-300 transition-all">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono">No Result Rate</span>
+                  <h3 className="text-3xl font-display font-bold text-neutral-900 mt-2">
+                    {analytics.total > 0 ? `${Math.round((analytics.noResults / analytics.total) * 100)}%` : '0%'}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-4 leading-relaxed">Ratio of search queries returning zero results.</p>
+              </div>
+
+              <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:border-neutral-300 transition-all">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono">Avg Latency</span>
+                  <h3 className="text-3xl font-display font-bold text-neutral-900 mt-2">{analytics.avgTime} ms</h3>
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-4 leading-relaxed">Mean response time from embedding lookup to DB scan.</p>
+              </div>
+            </div>
+          )}
+
+          {/* TRENDING QUERIES LIST */}
+          {analytics && analytics.topQueries.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-2xl p-6 mb-8 shadow-sm">
+              <h3 className="font-display font-semibold text-neutral-800 text-sm uppercase tracking-wider mb-4">Trending Search Queries</h3>
+              <div className="flex flex-wrap gap-2">
+                {analytics.topQueries.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 px-3.5 py-1.5 rounded-xl text-xs text-neutral-700 hover:border-neutral-300 transition-all cursor-default">
+                    <span className="font-semibold">{item.query}</span>
+                    <span className="bg-neutral-200/60 text-neutral-600 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="bg-white border border-neutral-200 rounded-2xl p-8 mb-8 shadow-sm">
             <div className="flex items-center justify-between mb-6">

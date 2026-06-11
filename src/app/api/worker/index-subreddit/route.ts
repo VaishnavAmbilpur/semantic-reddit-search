@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
   if (posts.length > 0) {
     // Disabled: comment indexing is disabled to save free tier operations.
-    const allComments: any[] = [];
+    const allComments: { body: string; id: string; score: number; author: string; created_utc: number; internalPostId: string }[] = [];
 
     // 3. Prepare all texts for embedding (Posts + Comments)
     // TRUNCATION: Save tokens by only embedding the first 500 chars

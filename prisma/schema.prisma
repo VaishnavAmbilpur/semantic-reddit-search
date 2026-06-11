@@ -84,3 +84,17 @@ enum JobStatus {
   COMPLETED
   FAILED
 }
+
+model SearchEvent {
+  id          String   @id @default(cuid())
+  query       String
+  resultCount Int
+  queryTime   Int      // ms
+  cacheHit    Boolean
+  hasResults  Boolean
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([hasResults])
+}
+

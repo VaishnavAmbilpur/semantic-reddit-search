@@ -3,8 +3,19 @@ import { createHash } from 'crypto';
 
 import { SearchFilters, SearchResult } from './search';
 
+export function normalizeQuery(q: string): string {
+  return q
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')        // collapse whitespace
+    .replace(/[^\w\s]/g, '')     // strip punctuation
+    .replace(/\b(\w+)s\b/g, '$1') // naive depluralize: "keyboards" → "keyboard"
+    .slice(0, 100);
+}
+
 export function getCacheKey(query: string, filters: SearchFilters) {
-  const hash = createHash('md5').update(JSON.stringify({ query, filters })).digest('hex');
+  const normalized = normalizeQuery(query);
+  const hash = createHash('md5').update(JSON.stringify({ query: normalized, filters })).digest('hex');
   return `search:${hash}`;
 }
 
@@ -13,5 +24,5 @@ export async function getCachedResults(key: string) {
 }
 
 export async function setCachedResults(key: string, data: { results: SearchResult[], queryTime: number }) {
-  await redis.set(key, JSON.stringify(data), { ex: 600 }); // 600s TTL (10 minutes)
+  await redis.set(key, JSON.stringify(data), { ex: 3600 }); // 1 hour TTL
 }

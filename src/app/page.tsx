@@ -1,6 +1,8 @@
 "use client";
+/* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useState, useEffect, useCallback, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { timeAgo } from "@/lib/utils";
 
 interface SearchResult {
   id: string;
@@ -9,6 +11,7 @@ interface SearchResult {
   content: string | null;
   url: string;
   upvotes: number;
+  commentCount: number;
   author: string;
   redditCreatedAt: string;
   subreddit: string;
@@ -24,6 +27,7 @@ interface SearchInputProps {
   loading: boolean;
   tokensRemaining: number;
   searchesRemaining: number;
+  searchHistory?: string[];
 }
 
 const SearchInputUI = ({ 
@@ -33,65 +37,100 @@ const SearchInputUI = ({
   onSearch, 
   loading, 
   tokensRemaining,
-  searchesRemaining
-}: SearchInputProps) => (
-  <div className={`relative w-full ${compact ? 'max-w-3xl' : 'max-w-2xl'} mx-auto`}>
-    <div className={`relative flex items-center bg-neutral-900/30 backdrop-blur-xl border border-neutral-800/80 hover:border-neutral-700/80 focus-within:border-neutral-400 focus-within:ring-1 focus-within:ring-neutral-600 transition-all duration-300 ${compact ? 'rounded-full px-4 py-1.5' : 'rounded-3xl px-6 py-4 shadow-2xl'}`}>
-      <div className={`transition-colors duration-300 ${compact ? 'text-white' : 'text-neutral-500'} shrink-0`}>
-        <svg width={compact ? "18" : "22"} height={compact ? "18" : "22"} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" strokeWidth="2.5"/><path d="M21 21l-4.35-4.35" strokeWidth="2.5" strokeLinecap="round"/></svg>
+  searchesRemaining,
+  searchHistory = []
+}: SearchInputProps) => {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <div className={`relative w-full ${compact ? 'max-w-3xl' : 'max-w-2xl'} mx-auto`}>
+      <div className={`relative flex items-center bg-neutral-900/30 backdrop-blur-xl border border-neutral-800/80 hover:border-neutral-700/80 focus-within:border-neutral-400 focus-within:ring-1 focus-within:ring-neutral-600 transition-all duration-300 ${compact ? 'rounded-full px-4 py-1.5' : 'rounded-3xl px-6 py-4 shadow-2xl'}`}>
+        <div className={`transition-colors duration-300 ${compact ? 'text-white' : 'text-neutral-500'} shrink-0`}>
+          <svg width={compact ? "18" : "22"} height={compact ? "18" : "22"} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" strokeWidth="2.5"/><path d="M21 21l-4.35-4.35" strokeWidth="2.5" strokeLinecap="round"/></svg>
+        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onSearch(undefined);
+            }
+          }}
+          onFocus={(e) => { 
+            e.target.select(); 
+            setIsFocused(true); 
+          }}
+          onBlur={() => {
+            // Delay closing to allow onMouseDown to fire on history buttons
+            setTimeout(() => setIsFocused(false), 200);
+          }}
+          placeholder="Scour Reddit archives semantically..."
+          className={`flex-1 w-full bg-transparent border-none outline-none text-white placeholder:text-neutral-500 ml-3 transition-colors duration-300 ${compact ? 'text-[14px]' : 'text-[16px] font-light tracking-wide'}`}
+        />
+        {compact && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button 
+              onClick={() => { onSearch(undefined); }}
+              disabled={loading} 
+              className="px-4 py-1.5 bg-white hover:bg-neutral-200 text-black rounded-full font-bold text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-[0_2px_10px_rgba(255,255,255,0.1)]"
+            >
+              SEARCH
+            </button>
+          </div>
+        )}
+        {loading && (
+          <div className="ml-2 w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
+        )}
       </div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onSearch(undefined);
-          }
-        }}
-        onFocus={(e) => { e.target.select(); }}
-        placeholder="Scour Reddit archives semantically..."
-        className={`flex-1 w-full bg-transparent border-none outline-none text-white placeholder:text-neutral-500 ml-3 transition-colors duration-300 ${compact ? 'text-[14px]' : 'text-[16px] font-light tracking-wide'}`}
-      />
-      {compact && (
-        <div className="flex items-center gap-2 shrink-0">
+
+      {/* Dropdown for history when input is focused and query is empty */}
+      {isFocused && query === '' && searchHistory.length > 0 && (
+        <div className="absolute left-0 right-0 mt-2 bg-neutral-900/95 backdrop-blur-xl border border-neutral-800 rounded-2xl shadow-2xl p-3 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 max-w-full">
+          <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1.5 px-2">Recent Searches</div>
+          <div className="flex flex-col gap-0.5">
+            {searchHistory.map((q, idx) => (
+              <button 
+                key={idx} 
+                onMouseDown={() => {
+                  setQuery(q);
+                  // Give it a tiny tick to make sure the state is updated and run search
+                  setTimeout(() => onSearch(undefined, { q }), 50);
+                }}
+                className="flex items-center gap-3 px-3 py-2 text-[13px] text-neutral-300 hover:text-white hover:bg-neutral-800/60 rounded-xl transition-all text-left w-full"
+              >
+                <span className="text-neutral-500">↩</span>
+                <span>{q}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!compact && (
+        <div className="mt-8 flex flex-col items-center gap-6">
           <button 
             onClick={() => { onSearch(undefined); }}
             disabled={loading} 
-            className="px-4 py-1.5 bg-white hover:bg-neutral-200 text-black rounded-full font-bold text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-[0_2px_10px_rgba(255,255,255,0.1)]"
+            className="bg-white hover:bg-neutral-200 text-black px-12 py-3.5 rounded-full font-bold text-[13px] uppercase tracking-[0.2em] transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-[0_4px_30px_rgba(255,255,255,0.12)] shrink-0"
           >
-            SEARCH
+            {loading ? 'Analyzing intent...' : 'Begin scan'}
           </button>
-        </div>
-      )}
-      {loading && (
-        <div className="ml-2 w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
-      )}
-    </div>
-
-    {!compact && (
-      <div className="mt-8 flex flex-col items-center gap-6">
-        <button 
-          onClick={() => { onSearch(undefined); }}
-          disabled={loading} 
-          className="bg-white hover:bg-neutral-200 text-black px-12 py-3.5 rounded-full font-bold text-[13px] uppercase tracking-[0.2em] transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-[0_4px_30px_rgba(255,255,255,0.12)] shrink-0"
-        >
-          {loading ? 'Analyzing intent...' : 'Begin scan'}
-        </button>
-        
-        <div className="flex flex-col items-center text-center max-w-md w-full animate-in fade-in duration-500 delay-300">
-          <div className="flex items-center bg-neutral-900/30 backdrop-blur-md border border-neutral-800/60 px-6 py-2.5 rounded-2xl shadow-lg">
-             <div className="flex flex-col items-center min-w-[120px]">
-               <span className="text-white font-mono font-bold text-[16px]">{searchesRemaining}</span>
-               <span className="text-[9px] text-neutral-500 uppercase tracking-[0.2em] font-bold mt-0.5">Scans Remaining</span>
-             </div>
+          
+          <div className="flex flex-col items-center text-center max-w-md w-full animate-in fade-in duration-500 delay-300">
+            <div className="flex items-center bg-neutral-900/30 backdrop-blur-md border border-neutral-800/60 px-6 py-2.5 rounded-2xl shadow-lg">
+               <div className="flex flex-col items-center min-w-[120px]">
+                 <span className="text-white font-mono font-bold text-[16px]">{searchesRemaining}</span>
+                 <span className="text-[9px] text-neutral-500 uppercase tracking-[0.2em] font-bold mt-0.5">Scans Remaining</span>
+               </div>
+            </div>
           </div>
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+    </div>
+  );
+};
 
 // Maps raw API error strings to friendly UI descriptions
 type ParsedError = {
@@ -218,6 +257,37 @@ function SearchPageContent() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(!!searchParams.get("q"));
+
+  // Bookmarks/Saved state
+  const [savedResults, setSavedResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('redex:saved');
+    if (saved) {
+      try {
+        setSavedResults(JSON.parse(saved));
+      } catch (e) {
+        console.warn('Failed to parse bookmarks:', e);
+      }
+    }
+  }, []);
+
+  const toggleSaveResult = useCallback((result: SearchResult, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setSavedResults(prev => {
+      const isSaved = prev.some(r => r.id === result.id);
+      let next;
+      if (isSaved) {
+        next = prev.filter(r => r.id !== result.id);
+      } else {
+        next = [result, ...prev].slice(0, 50);
+      }
+      localStorage.setItem('redex:saved', JSON.stringify(next));
+      return next;
+    });
+  }, []);
   
   // Active filters and subset scopes
   const [sort, setSort] = useState(searchParams.get("sort") || "relevance");
@@ -578,6 +648,7 @@ function SearchPageContent() {
                 loading={loading} 
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
+                searchHistory={searchHistory}
               />
             </div>
           )}
@@ -622,6 +693,7 @@ function SearchPageContent() {
                 loading={loading} 
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
+                searchHistory={searchHistory}
               />
             </div>
           </div>
@@ -640,6 +712,7 @@ function SearchPageContent() {
                 loading={loading} 
                 tokensRemaining={tokensRemaining}
                 searchesRemaining={searchesRemaining}
+                searchHistory={searchHistory}
               />
 
               {/* Recent Searches */}
@@ -775,72 +848,91 @@ function SearchPageContent() {
                 ) : (
                   <div className="space-y-6 pb-20">
                     {results.map((r) => (
-                      <a 
-                        key={r.id} 
-                        href={r.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="block p-6 bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 hover:border-neutral-800/80 rounded-2xl transition-all duration-300 group hover:-translate-y-0.5 shadow-sm hover:shadow-lg"
-                      >
-                        {/* URL / Subreddit Context */}
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-8 h-8 bg-neutral-950 border border-neutral-800 rounded-xl flex items-center justify-center text-[12px] font-bold text-neutral-300 shadow-[0_2px_8px_rgba(0,0,0,0.4)]">
-                            r/
+                      <div key={r.id} className="relative group">
+                        <a 
+                          href={r.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="block p-6 bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 hover:border-neutral-800/80 rounded-2xl transition-all duration-300 hover:-translate-y-0.5 shadow-sm hover:shadow-lg"
+                        >
+                          {/* URL / Subreddit Context */}
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="w-8 h-8 bg-neutral-950 border border-neutral-800 rounded-xl flex items-center justify-center text-[12px] font-bold text-neutral-300 shadow-[0_2px_8px_rgba(0,0,0,0.4)]">
+                              r/
+                            </div>
+                            <div className="flex flex-col pr-8">
+                              <span className="text-[13px] font-bold text-white tracking-wide line-clamp-1 hover:underline">
+                                reddit.com/r/{r.subreddit}
+                              </span>
+                              <span className="text-[11px] text-neutral-500 font-light mt-0.5">
+                                u/{r.author} &bull; {r.upvotes} upvotes &bull; {timeAgo(r.redditCreatedAt)} &bull; {r.commentCount ?? 0} comments
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex flex-col">
-                            <span className="text-[13px] font-bold text-white tracking-wide line-clamp-1 hover:underline">
-                              reddit.com/r/{r.subreddit}
-                            </span>
-                            <span className="text-[11px] text-neutral-500 font-light mt-0.5">
-                              u/{r.author} &bull; {new Date(r.redditCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric'})}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        {/* Title */}
-                        <h3 className="text-[18px] text-white group-hover:text-neutral-300 font-semibold leading-snug transition-colors duration-200">
-                          {r.type === 'post' ? r.title : `Comment on thread: ${r.url.split('/').pop()?.replace(/_/g, ' ') || 'Thread'}`}
-                        </h3>
-
-                        {/* Snippet */}
-                        {r.content && r.content !== "[removed]" && (
-                          <p className="text-[13.5px] text-neutral-400 font-light leading-relaxed mt-2.5 mb-4 line-clamp-2">
-                            {r.content}
-                          </p>
-                        )}
-                        
-                        {/* Tags */}
-                        <div className="mt-4 flex flex-wrap gap-2.5 text-[11px] font-medium tracking-wide">
-                          <span className="text-white bg-neutral-955 border border-neutral-850 px-2.5 py-1 rounded-md font-mono">
-                            {(r.similarity*100).toFixed(0)}% Match
-                          </span>
-
-                          {/* Source Badges */}
-                          {r.isLive ? (
-                            <span 
-                              title="Fetched live from Reddit — being saved to index"
-                              className="text-sky-400 bg-sky-950/10 border border-sky-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block animate-pulse" />
-                              Live Stream
-                            </span>
-                          ) : (
-                            <span 
-                              title="From semantic index — instant recall"
-                              className="text-violet-400 bg-violet-950/10 border border-violet-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                              Semantic Index
-                            </span>
-                          )}
-
-                          <span className="text-neutral-400 bg-neutral-900/40 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">👍 {r.upvotes} Votes</span>
                           
-                          {r.type === 'comment' && (
-                            <span className="text-neutral-300 bg-neutral-900/60 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">Comment</span>
+                          {/* Title */}
+                          <h3 className="text-[18px] text-white group-hover:text-neutral-300 font-semibold leading-snug transition-colors duration-200">
+                            {r.type === 'post' ? r.title : `Comment on thread: ${r.url.split('/').pop()?.replace(/_/g, ' ') || 'Thread'}`}
+                          </h3>
+
+                          {/* Snippet */}
+                          {r.content && r.content !== "[removed]" && (
+                            <p className="text-[13.5px] text-neutral-400 font-light leading-relaxed mt-2.5 mb-4 line-clamp-2">
+                              {r.content}
+                            </p>
                           )}
-                        </div>
-                      </a>
+                          
+                          {/* Tags */}
+                          <div className="mt-4 flex flex-wrap gap-2.5 text-[11px] font-medium tracking-wide">
+                            <span className="text-white bg-neutral-955 border border-neutral-850 px-2.5 py-1 rounded-md font-mono">
+                              {(r.similarity*100).toFixed(0)}% Match
+                            </span>
+
+                            {/* Source Badges */}
+                            {r.isLive ? (
+                              <span 
+                                title="Fetched live from Reddit — fresh but unverified"
+                                className="text-sky-400 bg-sky-950/10 border border-sky-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block animate-pulse" />
+                                Live
+                              </span>
+                            ) : (
+                              <span 
+                                title="From semantic index — stable and indexed"
+                                className="text-violet-400 bg-violet-950/10 border border-violet-900/20 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5 cursor-help"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
+                                Indexed
+                              </span>
+                            )}
+
+                            <span className="text-neutral-400 bg-neutral-900/40 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">👍 {r.upvotes} Votes</span>
+                            
+                            {r.type === 'comment' && (
+                              <span className="text-neutral-300 bg-neutral-900/60 border border-neutral-800 px-2.5 py-1 rounded-md font-mono">Comment</span>
+                            )}
+                          </div>
+                        </a>
+
+                        {/* Bookmark Button */}
+                        <button
+                          onClick={(e) => toggleSaveResult(r, e)}
+                          className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-950/80 border border-neutral-800/60 text-neutral-400 hover:text-white hover:scale-105 transition-all z-10"
+                          title={savedResults.some(saved => saved.id === r.id) ? "Remove Bookmark" : "Bookmark Result"}
+                        >
+                          <svg 
+                            width="14" 
+                            height="14" 
+                            fill={savedResults.some(saved => saved.id === r.id) ? "currentColor" : "none"} 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                            strokeWidth="2"
+                          >
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -868,6 +960,35 @@ function SearchPageContent() {
                     ))}
                   </div>
                 </div>
+
+                {savedResults.length > 0 && (
+                  <div className="bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 rounded-3xl p-6 space-y-4 animate-in fade-in duration-300">
+                    <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Bookmarks ({savedResults.length})</h4>
+                    <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
+                      {savedResults.map(saved => (
+                        <div key={saved.id} className="group/item flex flex-col gap-1 border-b border-neutral-900/60 pb-2 last:border-0 last:pb-0">
+                          <a 
+                            href={saved.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[12px] text-neutral-300 hover:text-white font-medium line-clamp-2 hover:underline leading-snug"
+                          >
+                            {saved.title || saved.content || 'Untitled Bookmark'}
+                          </a>
+                          <div className="flex items-center justify-between text-[10px] text-neutral-500 font-mono">
+                            <span>r/{saved.subreddit}</span>
+                            <button 
+                              onClick={(e) => toggleSaveResult(saved, e)}
+                              className="text-neutral-600 hover:text-red-400 transition-colors"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
