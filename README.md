@@ -154,7 +154,6 @@ All services have generous free tiers — running Redex costs $0.
 | `GET /api/search?q=...` | Deep Scan search — Google + ArcticShift + Hugging Face Rerank, merged and ranked |
 | `GET /api/search?q=...&refresh=true` | Force a fresh live scan, bypassing cache |
 | `GET /api/subreddits` | List all indexed subreddits |
-| `GET /api/suggest?q=...` | Auto-suggestions from indexed post titles |
 
 ### Search Query Parameters
 | Parameter | Default | Description |
@@ -218,7 +217,6 @@ redex/
     │   └── api/
     │       ├── search/          # Deep Scan orchestrator (Google + ArcticShift + Hugging Face)
     │       ├── subreddits/      # Public subreddit list
-    │       ├── suggest/         # Search suggestions
     │       ├── admin/           # Protected admin routes
     │       └── worker/
     │           ├── index-subreddit/   # Arctic Shift bulk indexer
