@@ -8,9 +8,9 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ## Features
 
-* **Optimized Single-Roundtrip Pipeline:** Every query runs in a parallelized pipeline. To optimize speed and save token costs, the second-pass Hugging Face reranker is disabled—cutting search latency by 1,500ms while keeping a single batched embedding call.
-* **Google-Powered Discovery (SerpApi):** Instead of hitting Reddit's own search, Redex uses SerpApi to run a `site:reddit.com` Google search, finding the highest-quality threads Google already knows about.
-* **ArcticShift Fallback & Recall Boost:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of up to 45 top candidates per query.
+* **Optimized Single-Roundtrip Pipeline:** Every query runs in a parallelized pipeline. The second-pass Hugging Face reranker is disabled by default to cut search latency and save token costs, but can be enabled on-demand via the `ENABLE_RERANKER` feature flag.
+* **Google-Powered Discovery (SerpApi):** Capped at 20 results per search to balance precision and SerpApi monthly quota.
+* **ArcticShift Fallback & Recall Boost:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of up to 35 top candidates per query.
 * **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Pinecone. Only posts with ≥50 upvotes are persisted (up to a hard cap of 25,000 posts in the index) to protect the index storage limits.
 * **Token-Efficient Architecture:** Subsequent filter changes (All/Posts/Comments, Any Time/Recent) are performed **client-side** at zero token cost. The AI pipeline is only invoked for new queries.
 * **Client-Side Filtering:** Tab switching (All, Posts, Comments) and Time Range (Any time, Recent) filters operate purely in the browser on already-loaded results — 0 extra API calls.
@@ -34,26 +34,27 @@ User searches "best mechanical keyboard"
         ▼
 [1] Hugging Face: Single query embedding (shared by both lanes)
         │
-   ┌────┴──────────────────────────────┐
-   ▼                                    ▼
+        ┌────┴──────────────────────────────┐
+        ▼                                    ▼
 DB Lane (Pinecone)              Google + ArcticShift (Live)
-Semantic cosine search          SerpApi: top 30 Google results
+Semantic cosine search          SerpApi: top 20 Google results
 on indexed posts+comments       ArcticShift: top 15 archive posts
                                 → Merge + Deduplicate → top 35
                                 → Hugging Face embed each → cosine score
-   └────────────┬─────────────────────┘
-                ▼
+        └────────────┬─────────────────────┘
+                     ▼
    Merge + deduplicate (ID-based)
    Sort: Upvotes → Similarity
-                │
-                ▼
-    (Hugging Face Reranker Pass 2 is bypassed to keep search instant)
-                 │
-                 ▼
-         Return results to user
-                │
-                ▼ (background — after response sent)
+                     │
+                     ▼
+    (Hugging Face Reranker Pass 2 is bypassed by default to keep search instant)
+                     │
+                     ▼
+             Return results to user
+                    │
+                    ▼ (background — after response sent)
    QStash → persist-live worker
+     → Redis Dedup Cache check (skips Pinecone fetch if ID already indexed)
      → Filter: only posts with ≥50 upvotes saved to Pinecone (up to 25K total posts)
      → Trigger ArcticShift full index for new subreddits
 ```
@@ -69,7 +70,7 @@ The next time someone searches the same topic, it's instant from cache (<10ms), 
 | Framework | [Next.js 16 (App Router)](https://nextjs.org/) |
 | Vector Database | [Pinecone](https://pinecone.io/) |
 | AI Embeddings | [Hugging Face](https://huggingface.co/) `BAAI/bge-base-en-v1.5` (768 dims) |
-| AI Reranking | Hugging Face Reranker (Disabled for speed/budget optimization) |
+| AI Reranking | Hugging Face Reranker (Disabled by default; toggleable via ENABLE_RERANKER) |
 | Google Search | [SerpApi](https://serpapi.com/) `site:reddit.com` strategy |
 | Message Queue | [Upstash QStash](https://upstash.com/) |
 | Caching & Metadata | [Upstash Redis](https://upstash.com/) |
@@ -164,24 +165,25 @@ All services have generous free tiers — running Redex costs $0.
 
 ---
 
-## 🧠 Token Budget & Cost
+## 🧠 Token Budget & Cost & Smart Optimizations
 
-Redex is designed to maximize your free-tier AI token usage:
+Redex is designed to maximize free-tier AI token and API usage with built-in resource control:
 
 | Operation | Estimated Token Cost |
 |---|---|
-| Query Embedding (Hugging Face) | ~50 tokens |
+| Query Embedding (Hugging Face) | ~50 tokens (24h cache-backed) |
 | Live Post Embeddings (15 posts × ~200 tokens) | ~3,000 tokens |
-| Hugging Face Reranking (Disabled) | 0 tokens |
+| Hugging Face Reranking (Toggleable feature flag) | 0 tokens (Default: disabled) |
 | **Total per Deep Scan** | **~3,050 tokens** |
 
-With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **650+ full Deep Scans** (over 10x savings compared to reranked pipeline) before needing any top-up.
+With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **650+ cold Deep Scans** per month. With cache hit optimizations, this extends to **800+ searches/month**.
 
-**Token Savings:**
-- Switching tabs (All/Posts/Comments): **0 tokens** (client-side)
-- Switching time range (Any time/Recent): **0 tokens** (client-side)
-- Repeat search of same query: **0 tokens** (Redis cache, <10ms)
-- Background persistence: tokens already recycled from search embeddings
+### ⚡ Built-in Smart Optimizations:
+- **Reduced Indexer Truncation**: Bulk subreddit indexing slices text to `2,000` characters (down from `8,000`), reducing token burn by up to 75% without sacrificing vector quality.
+- **Tiered Cache TTL**: Search caching TTL matches the query frequency profile (30 minutes for `week`, 2 hours for `month`, and 24 hours for evergreen `all`/`year` queries).
+- **Reduced Google Search Cost**: SerpApi results are capped at `20` (down from `30`) to prolong the 100 free searches/month quota.
+- **Redis Deduplication Cache**: The background worker performs a fast check against `pinecone:indexed_ids` in Redis before triggering Pinecone fetch operations.
+- **Reranker Feature Flag**: Toggle second-pass reranking on/off via `ENABLE_RERANKER` inside your environment variables.
 
 ---
 
