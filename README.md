@@ -160,7 +160,6 @@ All services have generous free tiers — running Redex costs $0.
 ### Workers (called by QStash only)
 | Endpoint | Description |
 |---|---|
-| `POST /api/worker/index-subreddit` | Processes one time-based page from Arctic Shift |
 | `POST /api/worker/persist-live` | Saves live search results (≥50 upvotes, capped at 25K total posts) to Pinecone |
 
 ---
@@ -198,7 +197,6 @@ redex/
     │       ├── search/          # Deep Scan orchestrator (Google + ArcticShift + Hugging Face)
     │       ├── subreddits/      # Public subreddit list
     │       └── worker/
-    │           ├── index-subreddit/   # Arctic Shift bulk indexer
     │           └── persist-live/      # Organic Index saver (upvote-filtered)
     │
     └── lib/
