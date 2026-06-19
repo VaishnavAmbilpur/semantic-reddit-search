@@ -1,5 +1,5 @@
 // src/app/api/search/route.ts
-import { semanticSearchWithVector, mergeAndRank } from '@/lib/search';
+import { vectorSearch, mergeAndRank } from '@/lib/search';
 import { generateQueryEmbedding, generateSearchEmbeddings, rerankResults, generateQueryAndPostEmbeddings } from '@/lib/embeddings';
 import { getCacheKey, getCachedResults, setCachedResults, normalizeQuery } from '@/lib/cache';
 import { qstash } from '@/lib/qstash';
@@ -8,7 +8,6 @@ import { SearchResult } from '@/lib/search';
 import { searchGoogleReddit } from '@/lib/googleSearch';
 import { searchPostsGlobal, ArcticPost } from '@/lib/arcticShift';
 import { cosineSimilarity } from '@/lib/utils';
-import { logSearch } from '@/lib/analytics';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -44,13 +43,6 @@ export async function GET(req: Request) {
     if (cached) {
       const data = typeof cached === 'string' ? JSON.parse(cached) : (cached as { results: SearchResult[]; queryTime: number });
       
-      // Log cache hit analytics
-      void logSearch({
-        query: normalizedQ,
-        resultCount: data.results.length,
-        queryTime: data.queryTime || (Date.now() - start),
-        cacheHit: true,
-      });
 
       return Response.json({ 
         results: data.results, 
@@ -123,7 +115,7 @@ export async function GET(req: Request) {
       const tFetchStart = Date.now();
       const [rawPosts, dbSearchResults] = await Promise.all([
         livePostsPromise,
-        refresh ? Promise.resolve([]) : semanticSearchWithVector(queryVector, filters)
+        refresh ? Promise.resolve([]) : vectorSearch(queryVector, filters)
       ]);
       dbResults = dbSearchResults;
       t('fetch', tFetchStart);
@@ -180,7 +172,7 @@ export async function GET(req: Request) {
 
         // Run DB search with the newly obtained vector
         const tDbSearchStart = Date.now();
-        dbResults = refresh ? [] : await semanticSearchWithVector(queryVector, filters);
+        dbResults = refresh ? [] : await vectorSearch(queryVector, filters);
         t('db_search', tDbSearchStart);
 
         liveResults = topPosts.map((p: ArcticPost, i: number) => ({
@@ -205,7 +197,7 @@ export async function GET(req: Request) {
         t('query_embedding', tQueryEmbedStart);
         
         const tDbSearchStart = Date.now();
-        dbResults = refresh ? [] : await semanticSearchWithVector(queryVector, filters);
+        dbResults = refresh ? [] : await vectorSearch(queryVector, filters);
         t('db_search', tDbSearchStart);
       }
     }
@@ -266,13 +258,6 @@ export async function GET(req: Request) {
     // 6. Cache results
     await setCachedResults(cacheKey, { results, queryTime });
 
-    // Log cache miss analytics
-    void logSearch({
-      query: normalizedQ,
-      resultCount: results.length,
-      queryTime,
-      cacheHit: false,
-    });
 
     // 6. Background: Persist live results to DB via QStash
     if (shouldRunLive && liveResults.length > 0) {

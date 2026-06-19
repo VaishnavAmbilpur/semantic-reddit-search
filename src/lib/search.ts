@@ -1,7 +1,7 @@
 import { generateQueryEmbedding, generateSearchEmbeddings } from './embeddings';
-import { prisma } from './prisma';
 import { searchPostsGlobal } from './arcticShift';
 import { cosineSimilarity } from './utils';
+import { queryVectors } from './pinecone';
 
 export interface SearchFilters {
   subreddits?: string[];
@@ -25,7 +25,7 @@ export interface SearchResult {
   subreddit: string;
   similarity: number;
   isLive?: boolean; 
-  embedding?: number[]; // ← NEW: Keep the vector for recycling
+  embedding?: number[]; // ← Keep the vector for recycling
 }
 
 /**
@@ -62,68 +62,62 @@ export async function fetchAndScoreLivePosts(query: string, queryVector: number[
   }));
 }
 
-export async function semanticSearch(query: string, filters: SearchFilters = {}) {
-  const vector = await generateQueryEmbedding(query);
-  const vecStr = `[${vector.join(',')}]`;
+export async function vectorSearch(
+  queryVector: number[],
+  filters: SearchFilters
+): Promise<SearchResult[]> {
   const limit = filters.limit ?? 20;
   const minUpvotes = filters.minUpvotes ?? 0;
-  const sort = filters.sort ?? 'relevance';
   const subreddits = filters.subreddits ?? [];
   const type = filters.type ?? 'all';
   const dateRange = filters.dateRange ?? 'all';
+  const sort = filters.sort ?? 'relevance';
 
-  let dateFilter = '';
-  if (dateRange !== 'all') {
-    const now = new Date();
-    const startDate = new Date();
-    if (dateRange === 'week') startDate.setDate(now.getDate() - 7);
-    else if (dateRange === 'month') startDate.setMonth(now.getMonth() - 1);
-    else if (dateRange === 'year') startDate.setFullYear(now.getFullYear() - 1);
-    dateFilter = `AND "redditCreatedAt" >= '${startDate.toISOString()}'`;
+  // Retrieve enough candidates to ensure we can satisfy the limit after sorting/filtering
+  const topK = Math.max(limit, 100);
+
+  try {
+    const matches = await queryVectors(queryVector, {
+      topK,
+      filter: {
+        type,
+        minUpvotes,
+        subreddits,
+        dateRange,
+      },
+    });
+
+    const results: SearchResult[] = matches.map(match => {
+      const metadata = (match.metadata || {}) as any;
+      return {
+        id: match.id,
+        type: metadata.type as 'post' | 'comment',
+        title: metadata.title || null,
+        content: metadata.content || null,
+        url: metadata.url || '',
+        upvotes: Number(metadata.upvotes || 0),
+        commentCount: Number(metadata.commentCount || 0),
+        author: metadata.author || '',
+        redditCreatedAt: typeof metadata.redditCreatedAt === 'number'
+          ? new Date(metadata.redditCreatedAt * 1000).toISOString()
+          : new Date().toISOString(),
+        subreddit: metadata.subreddit || '',
+        similarity: match.score || 0,
+        isLive: false,
+      };
+    });
+
+    if (sort === 'top') {
+      results.sort((a, b) => b.upvotes - a.upvotes || new Date(b.redditCreatedAt).getTime() - new Date(a.redditCreatedAt).getTime());
+    } else {
+      results.sort((a, b) => b.similarity - a.similarity);
+    }
+
+    return results.slice(0, limit);
+  } catch (error) {
+    console.error('[Pinecone Search Error]:', error);
+    return [];
   }
-
-  const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
-
-  const results: SearchResult[] = await prisma.$queryRawUnsafe(`
-    WITH results AS (
-      ${(type === 'all' || type === 'post') ? `
-      (
-        SELECT 
-          p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p."commentCount", p.author,
-          p."redditCreatedAt", s.name as subreddit,
-          1 - (p.embedding <=> $1::vector) as similarity
-        FROM "Post" p
-        JOIN "Subreddit" s ON p."subredditId" = s.id
-        WHERE p.embedding IS NOT NULL 
-          AND p.upvotes >= $2
-          ${dateFilter}
-          ${subFilter}
-      )
-      ` : ''}
-      ${(type === 'all') ? 'UNION ALL' : ''}
-      ${(type === 'all' || type === 'comment') ? `
-      (
-        SELECT 
-          c.id, 'comment' as type, null as title, c.content, 
-          p.url, c.upvotes, 0 as "commentCount", c.author,
-          c."redditCreatedAt", s.name as subreddit,
-          1 - (c.embedding <=> $1::vector) as similarity
-        FROM "Comment" c
-        JOIN "Post" p ON c."postId" = p.id
-        JOIN "Subreddit" s ON p."subredditId" = s.id
-        WHERE c.embedding IS NOT NULL 
-          AND c.upvotes >= $2
-          ${dateFilter}
-          ${subFilter}
-      )
-      ` : ''}
-    )
-    SELECT * FROM results
-    ORDER BY ${sort === 'relevance' ? 'similarity DESC' : 'upvotes DESC'}
-    LIMIT $3
-  `, vecStr, minUpvotes, limit, subreddits);
-
-  return results;
 }
 
 export function mergeAndRank(
@@ -179,39 +173,4 @@ export function mergeAndRank(
   }
 
   return merged.slice(0, limit);
-}
-
-/**
- * Performs the DB vector search using an existing query vector.
- * Shared between search and background workers.
- */
-export async function semanticSearchWithVector(
-  queryVector: number[],
-  filters: SearchFilters
-): Promise<SearchResult[]> {
-  const vecStr = `[${queryVector.join(',')}]`;
-  const { limit = 20, minUpvotes = 0, subreddits = [], type = 'all', dateRange = 'all', sort = 'relevance' } = filters;
-
-  // Disable strict SQL date cutoff to keep the same number of posts as Anytime,
-  // but we will still sort them by recency in the application.
-  const dateFilter = (_alias?: string) => '';
-
-  const subFilter = `AND (cardinality($4::text[]) = 0 OR s.name = ANY($4::text[]))`;
-
-  return await prisma.$queryRawUnsafe(`
-    WITH results AS (
-      ${(type === 'all' || type === 'post') ? `
-      (SELECT p.id, 'post' as type, p.title, p.content, p.url, p.upvotes, p."commentCount", p.author, p."redditCreatedAt", s.name as subreddit, 1 - (p.embedding <=> $1::vector) as similarity, false as "isLive"
-       FROM "Post" p JOIN "Subreddit" s ON p."subredditId" = s.id
-       WHERE p.embedding IS NOT NULL AND p.upvotes >= $2 ${dateFilter('p')} ${subFilter})` : ''}
-      ${type === 'all' ? 'UNION ALL' : ''}
-      ${(type === 'all' || type === 'comment') ? `
-      (SELECT c.id, 'comment' as type, null as title, c.content, p.url, c.upvotes, 0 as "commentCount", c.author, c."redditCreatedAt", s.name as subreddit, 1 - (c.embedding <=> $1::vector) as similarity, false as "isLive"
-       FROM "Comment" c JOIN "Post" p ON c."postId" = p.id JOIN "Subreddit" s ON p."subredditId" = s.id
-       WHERE c.embedding IS NOT NULL AND c.upvotes >= $2 ${dateFilter('c')} ${subFilter})` : ''}
-    )
-    SELECT * FROM results 
-    ORDER BY ${sort === 'relevance' ? 'similarity DESC' : 'upvotes DESC, "redditCreatedAt" DESC'}
-    LIMIT $3
-  `, vecStr, minUpvotes, limit, subreddits);
 }

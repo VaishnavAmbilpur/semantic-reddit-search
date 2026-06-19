@@ -1,13 +1,13 @@
 import { redis } from '@/lib/redis';
-import { prisma } from '@/lib/prisma';
+import { getPineconeIndex } from '@/lib/pinecone';
 
 export async function GET() {
   const checks = await Promise.allSettled([
     // 1. Redis Check
     redis.ping().then(() => ({ service: 'redis', status: 'ok' })),
 
-    // 2. Database Check
-    prisma.$queryRaw`SELECT 1`.then(() => ({ service: 'db', status: 'ok' })),
+    // 2. Pinecone Check
+    getPineconeIndex().describeIndexStats().then(() => ({ service: 'pinecone', status: 'ok' })),
 
     // 3. PullPush Status (from arcticShift status stored in Redis)
     redis.get('pullpush:status').then(s => ({
@@ -30,7 +30,7 @@ export async function GET() {
   const results = checks.map((c, i) =>
     c.status === 'fulfilled' 
       ? c.value 
-      : { service: ['redis', 'db', 'pullpush', 'huggingface'][i], status: 'error', error: c.reason?.message }
+      : { service: ['redis', 'pinecone', 'pullpush', 'huggingface'][i], status: 'error', error: c.reason?.message }
   );
 
   const allOk = results.every(r => r.status === 'ok' || (r.service === 'pullpush' && r.status === 'ok'));

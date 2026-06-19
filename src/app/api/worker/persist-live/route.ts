@@ -1,7 +1,8 @@
 // src/app/api/worker/persist-live/route.ts
-import { qstashReceiver, qstash } from '@/lib/qstash';
+import { qstashReceiver } from '@/lib/qstash';
 import { generateEmbeddings } from '@/lib/embeddings';
-import { prisma } from '@/lib/prisma';
+import { getPineconeIndex, upsertVectors, PineconeRecord } from '@/lib/pinecone';
+import { redis } from '@/lib/redis';
 
 interface LivePostPayload {
   id:              string;
@@ -21,10 +22,6 @@ interface WorkerBody {
   livePosts: LivePostPayload[];
 }
 
-function generateId() {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-}
-
 export async function POST(req: Request) {
   // 1. Verify QStash Signature
   const sig  = req.headers.get('Upstash-Signature') ?? '';
@@ -35,77 +32,74 @@ export async function POST(req: Request) {
   const { livePosts }: WorkerBody = JSON.parse(body);
   if (!livePosts || livePosts.length === 0) return Response.json({ skipped: true });
 
-  // 2. Deduplicate (only save posts we don't already have)
-  const redditIds = livePosts.map(p => p.id);
-  const existing  = await prisma.post.findMany({
-    where:  { redditId: { in: redditIds } },
-    select: { redditId: true },
-  });
-  const existingIds = new Set(existing.map(p => p.redditId));
-  const newPosts    = livePosts.filter(p => !existingIds.has(p.id));
+  try {
+    // 2. Deduplicate (only save posts we don't already have)
+    const redditIds = livePosts.map(p => p.id);
+    const fetchResponse = await getPineconeIndex().fetch({ ids: redditIds });
+    const existingRecords = fetchResponse.records || (fetchResponse as any).vectors || {};
+    const existingIds = new Set(Object.keys(existingRecords));
+    const newPosts    = livePosts.filter(p => !existingIds.has(p.id));
 
-  if (newPosts.length === 0) return Response.json({ skipped: true, reason: 'already indexed' });
+    if (newPosts.length === 0) return Response.json({ skipped: true, reason: 'already indexed' });
 
-  // 3. Upsert Subreddits
-  const bySubreddit = new Map<string, LivePostPayload[]>();
-  for (const post of newPosts) {
-    const group = bySubreddit.get(post.subreddit) ?? [];
-    group.push(post);
-    bySubreddit.set(post.subreddit, group);
-  }
-
-  const subredditMap = new Map<string, string>();
-  for (const [name] of bySubreddit) {
-    const subreddit = await prisma.subreddit.upsert({
-      where: { name },
-      create: { name, displayName: name },
-      update: { lastIndexed: new Date() },
-    });
-    subredditMap.set(name, subreddit.id);
-  }
-
-  // 4. Get Vectors (Either from payload or re-embed)
-  // Recycling vectors saves 50% of your AI token budget!
-  let vectors: number[][];
-  const providedVectors = newPosts.map(p => p.embedding).filter(v => !!v) as number[][];
-  
-  if (providedVectors.length === newPosts.length) {
-    vectors = providedVectors;
-  } else {
-    const texts = newPosts.map(p => `[POST] ${p.title} ${p.content ?? ''}`.trim());
-    vectors = await generateEmbeddings(texts);
-  }
-
-  // Prisma Postgres storage protection: Hard cap on total posts in DB
-  const postCount = await prisma.post.count();
-  const POST_CAP = 25000;
-  if (postCount >= POST_CAP) {
-    console.log('[persist-live] DB cap reached, skipping persist.');
-    return Response.json({ skipped: true, reason: 'db_cap' });
-  }
-
-  let savedCount = 0;
-  for (let i = 0; i < newPosts.length; i++) {
-    const post = newPosts[i];
-    const vector = vectors[i];
-    const subredditId = subredditMap.get(post.subreddit);
-
-    if (!vector || !subredditId) continue;
-
-    try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "Post" (id, "redditId", title, content, url, upvotes, "commentCount", "subredditId", author, "isNsfw", "redditCreatedAt", embedding)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::vector)
-         ON CONFLICT ("redditId") DO NOTHING`,
-        generateId(), post.id, post.title, post.content, post.url, post.upvotes, 0, subredditId, post.author, false, new Date(post.redditCreatedAt), `[${vector.join(',')}]`
-      );
-      savedCount++;
-    } catch (err) {
-      console.warn(`[persist-live] Save failed for ${post.id}:`, err);
+    // 3. Upsert Subreddits in Redis
+    for (const post of newPosts) {
+      await redis.sadd('subreddits', post.subreddit);
     }
+
+    // 4. Get Vectors (Either from payload or re-embed)
+    let vectors: number[][];
+    const providedVectors = newPosts.map(p => p.embedding).filter(v => !!v) as number[][];
+    
+    if (providedVectors.length === newPosts.length) {
+      vectors = providedVectors;
+    } else {
+      const texts = newPosts.map(p => `[POST] ${p.title} ${p.content ?? ''}`.trim());
+      vectors = await generateEmbeddings(texts);
+    }
+
+    // Storage Protection: Hard cap on total records in Pinecone
+    const stats = await getPineconeIndex().describeIndexStats();
+    const recordCount = stats.totalRecordCount ?? 0;
+    const POST_CAP = 25000;
+    if (recordCount >= POST_CAP) {
+      console.log('[persist-live] Pinecone record cap reached, skipping persist.');
+      return Response.json({ skipped: true, reason: 'db_cap' });
+    }
+
+    // 5. Prepare and Upsert records to Pinecone
+    const recordsToUpsert: PineconeRecord[] = [];
+    for (let i = 0; i < newPosts.length; i++) {
+      const post = newPosts[i];
+      const vector = vectors[i];
+      if (!vector) continue;
+
+      const timestampSeconds = Math.floor(new Date(post.redditCreatedAt).getTime() / 1000);
+      recordsToUpsert.push({
+        id: post.id,
+        values: vector,
+        metadata: {
+          type: 'post',
+          title: post.title,
+          content: post.content ? post.content.slice(0, 1000) : '',
+          url: post.url,
+          upvotes: post.upvotes,
+          commentCount: 0,
+          author: post.author,
+          subreddit: post.subreddit,
+          redditCreatedAt: timestampSeconds,
+          isNsfw: false,
+        }
+      });
+    }
+
+    if (recordsToUpsert.length > 0) {
+      await upsertVectors(recordsToUpsert);
+    }
+
+    return Response.json({ success: true, saved: recordsToUpsert.length });
+  } catch (error: any) {
+    console.error('[persist-live Worker Error]:', error);
+    return Response.json({ error: 'Worker execution failed', details: error.message }, { status: 500 });
   }
-
-  // Disabled: automatic subreddit indexing is disabled to save free tier operations.
-
-  return Response.json({ success: true, saved: savedCount });
 }

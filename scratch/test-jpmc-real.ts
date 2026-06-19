@@ -1,8 +1,7 @@
 import { generateQueryEmbedding } from '../src/lib/embeddings';
 import { searchGoogleReddit } from '../src/lib/googleSearch';
-import { semanticSearchWithVector, mergeAndRank } from '../src/lib/search';
+import { vectorSearch, mergeAndRank } from '../src/lib/search';
 import { cosineSimilarity } from '../src/lib/utils';
-import { prisma } from '../src/lib/prisma';
 
 async function main() {
   const q = 'JPMC';
@@ -38,7 +37,7 @@ async function main() {
   }
 
   console.log(`[Test] Querying DB semantic search...`);
-  const dbResults = await semanticSearchWithVector(queryVector, { limit: 20 });
+  const dbResults = await vectorSearch(queryVector, { limit: 20 });
   console.log(`[Test] DB results found: ${dbResults.length}`);
   dbResults.forEach(r => {
     console.log(`  - DB Post: [${(r.similarity*100).toFixed(1)}%] [Subreddit: ${r.subreddit}] ${r.title}`);
@@ -50,8 +49,6 @@ async function main() {
   merged.forEach((r, idx) => {
     console.log(`${idx + 1}. [${r.isLive ? 'LIVE' : 'DB'}] [Match: ${(r.similarity*100).toFixed(1)}%] [Subreddit: ${r.subreddit}] ${r.title}`);
   });
-
-  await prisma.$disconnect();
 }
 
 main().catch(console.error);

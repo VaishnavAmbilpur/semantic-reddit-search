@@ -212,7 +212,7 @@ function parseError(raw: string): ParsedError {
       retryLabel: 'Retry',
     };
   }
-  if (r.includes('database') || r.includes('prisma') || r.includes('neon')) {
+  if (r.includes('database') || r.includes('pinecone')) {
     return {
       icon: '🗄️',
       title: 'Database temporarily unavailable',
@@ -653,23 +653,6 @@ function SearchPageContent() {
             </div>
           )}
 
-          {!hasSearched ? (
-            <a 
-              href="/admin" 
-              className="text-[12px] font-semibold text-neutral-400 hover:text-white px-3.5 py-1.5 rounded-full bg-neutral-900/30 border border-neutral-900 hover:border-neutral-800 transition-all shrink-0 backdrop-blur-sm shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
-            >
-              Admin Console
-            </a>
-          ) : (
-            <div className="ml-auto hidden md:block">
-              <a 
-                href="/admin" 
-                className="text-[12px] font-semibold text-neutral-500 hover:text-white px-3.5 py-1.5 rounded-full bg-neutral-900/30 border border-neutral-900 hover:border-neutral-800 transition-all shrink-0 backdrop-blur-sm"
-              >
-                Admin Console
-              </a>
-            </div>
-          )}
         </div>
       </header>
 

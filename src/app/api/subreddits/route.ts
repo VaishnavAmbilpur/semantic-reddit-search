@@ -1,11 +1,15 @@
-import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/redis';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const subreddits = await prisma.subreddit.findMany({
-      select: { id: true, name: true, displayName: true, lastIndexed: true },
-    });
+    const subredditNames = await redis.smembers('subreddits');
+    const subreddits = subredditNames.map(name => ({
+      id: name,
+      name,
+      displayName: name,
+      lastIndexed: new Date().toISOString(),
+    }));
     return Response.json({ subreddits });
   } catch (error) {
     console.error('[Subreddits API Error]:', error);
