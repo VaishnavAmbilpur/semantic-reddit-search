@@ -35,11 +35,31 @@ export async function POST(req: Request) {
   try {
     // 2. Deduplicate (only save posts we don't already have)
     const redditIds = livePosts.map(p => p.id);
-    const fetchResponse = await getPineconeIndex().fetch({ ids: redditIds });
-    const existingRecords = fetchResponse.records || (fetchResponse as any).vectors || {};
-    const existingIds = new Set(Object.keys(existingRecords));
-    const newPosts    = livePosts.filter(p => !existingIds.has(p.id));
+    
+    // Check Redis first to avoid Pinecone fetch read operations
+    const redisCheck = await redis.smismember('pinecone:indexed_ids', redditIds);
+    const existingIds = new Set<string>();
+    redditIds.forEach((id, idx) => {
+      if (redisCheck[idx] === 1) {
+        existingIds.add(id);
+      }
+    });
 
+    const newPostsFilterRedis = livePosts.filter(p => !existingIds.has(p.id));
+    if (newPostsFilterRedis.length === 0) return Response.json({ skipped: true, reason: 'already indexed' });
+
+    // Fallback double-check with Pinecone for candidates not found in Redis
+    const newRedditIds = newPostsFilterRedis.map(p => p.id);
+    const fetchResponse = await getPineconeIndex().fetch({ ids: newRedditIds });
+    const existingRecords = fetchResponse.records || (fetchResponse as any).vectors || {};
+    const existingPineconeIds = new Set(Object.keys(existingRecords));
+
+    // Seed Redis cache with any duplicates found in Pinecone
+    for (const id of existingPineconeIds) {
+      await redis.sadd('pinecone:indexed_ids', id);
+    }
+
+    const newPosts = newPostsFilterRedis.filter(p => !existingPineconeIds.has(p.id));
     if (newPosts.length === 0) return Response.json({ skipped: true, reason: 'already indexed' });
 
     // 3. Upsert Subreddits in Redis
@@ -95,6 +115,9 @@ export async function POST(req: Request) {
 
     if (recordsToUpsert.length > 0) {
       await upsertVectors(recordsToUpsert);
+      // Cache newly upserted IDs in Redis set to prevent future fetches
+      const newIds = recordsToUpsert.map(r => r.id);
+      await redis.sadd('pinecone:indexed_ids', newIds[0], ...newIds.slice(1));
     }
 
     return Response.json({ success: true, saved: recordsToUpsert.length });

@@ -78,7 +78,7 @@ export async function GET(req: Request) {
       if (!shouldRunLive) return [];
       console.log(`[Search] Using Google Strategy for: ${q}`);
       const [googleResults, arcticResults] = await Promise.all([
-        searchGoogleReddit(q, 30),
+        searchGoogleReddit(q, 20),
         searchPostsGlobal(q, 15)
       ]);
       
@@ -203,38 +203,39 @@ export async function GET(req: Request) {
     }
 
     // 4. Merge and Initial Rank
-    const results = mergeAndRank(dbResults, liveResults, limit, sort, dateRange);
-
-    // 5. SECOND PASS: Hugging Face Reranker (DISABLED until DB reaches scale)
-    /*
-    const topSimilarity = results[0]?.similarity ?? 0;
-    const shouldRerank = results.length > 3 && dbResults.length > 0 && topSimilarity < 0.75;
-
-    if (shouldRerank) {
-      const docsToRerank = results.slice(0, 10).map(r => {
-        const text = `${r.title || ''} ${r.content || ''}`.trim().slice(0, 1000);
-        return {
-          id: r.id,
-          text: text.length > 0 ? text : 'No content available'
-        };
-      });
-
-      console.log(`[AI] Reranking ${docsToRerank.length} results for maximum precision (top similarity: ${topSimilarity.toFixed(4)} < 0.75)...`);
-      const reranked = await rerankResults(q, docsToRerank);
-      
-      const scoreMap = new Map(reranked.map(r => [r.id, r.score]));
-      results = results.map(r => ({
-        ...r,
-        similarity: scoreMap.get(r.id) || r.similarity
-      }));
-      
-      if (sort === 'relevance') {
-        results.sort((a, b) => b.similarity - a.similarity);
+    let results = mergeAndRank(dbResults, liveResults, limit, sort, dateRange);
+ 
+    // 5. SECOND PASS: Hugging Face Reranker (Toggleable via ENABLE_RERANKER env var)
+    const enableReranker = process.env.ENABLE_RERANKER === 'true';
+    if (enableReranker) {
+      const topSimilarity = results[0]?.similarity ?? 0;
+      const shouldRerank = results.length > 3 && dbResults.length > 0 && topSimilarity < 0.75;
+ 
+      if (shouldRerank) {
+        const docsToRerank = results.slice(0, 10).map(r => {
+          const text = `${r.title || ''} ${r.content || ''}`.trim().slice(0, 1000);
+          return {
+            id: r.id,
+            text: text.length > 0 ? text : 'No content available'
+          };
+        });
+ 
+        console.log(`[AI] Reranking ${docsToRerank.length} results for maximum precision (top similarity: ${topSimilarity.toFixed(4)} < 0.75)...`);
+        const reranked = await rerankResults(q, docsToRerank);
+        
+        const scoreMap = new Map(reranked.map(r => [r.id, r.score]));
+        results = results.map(r => ({
+          ...r,
+          similarity: scoreMap.get(r.id) || r.similarity
+        }));
+        
+        if (sort === 'relevance') {
+          results.sort((a, b) => b.similarity - a.similarity);
+        }
+      } else {
+        console.log(`[AI] Skipped reranking. Results length: ${results.length}, dbResults length: ${dbResults.length}, topSimilarity: ${topSimilarity.toFixed(4)}`);
       }
-    } else {
-      console.log(`[AI] Skipped reranking. Results length: ${results.length}, dbResults length: ${dbResults.length}, topSimilarity: ${topSimilarity.toFixed(4)}`);
     }
-    */
 
     // Sort according to date range (Anytime vs Recent)
     if (dateRange !== 'all') {
@@ -256,7 +257,7 @@ export async function GET(req: Request) {
     timings['total'] = queryTime;
 
     // 6. Cache results
-    await setCachedResults(cacheKey, { results, queryTime });
+    await setCachedResults(cacheKey, { results, queryTime }, dateRange);
 
 
     // 6. Background: Persist live results to DB via QStash
@@ -266,7 +267,7 @@ export async function GET(req: Request) {
         body: {
           query: normalizedQ,
           livePosts: liveResults
-            .filter(r => r.upvotes >= 50) // Storage Optimization: Only save quality posts to Prisma Postgres
+            .filter(r => r.upvotes >= 50) // Storage Optimization: Only save quality posts to Pinecone
             .map((r: SearchResult) => ({
               id: r.id,
               title: r.title,

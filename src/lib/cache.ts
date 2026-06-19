@@ -23,6 +23,13 @@ export async function getCachedResults(key: string) {
   return await redis.get(key);
 }
 
-export async function setCachedResults(key: string, data: { results: SearchResult[], queryTime: number }) {
-  await redis.set(key, JSON.stringify(data), { ex: 3600 }); // 1 hour TTL
+export async function setCachedResults(
+  key: string,
+  data: { results: SearchResult[], queryTime: number },
+  dateRange: string = 'all'
+) {
+  const ttl = dateRange === 'week' ? 1800    // 30 min — recent queries
+            : dateRange === 'month' ? 7200   // 2 hours
+            : 86400;                         // 24 hours for "all time" / "year"
+  await redis.set(key, JSON.stringify(data), { ex: ttl });
 }

@@ -72,7 +72,7 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
 
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
         const batch = texts.slice(i, i + BATCH_SIZE);
-        const data = await hfFetch(url, { inputs: batch.map(t => t.slice(0, 8000)) });
+        const data = await hfFetch(url, { inputs: batch.map(t => t.slice(0, 2000)) });
         allVectors.push(...data);
         
         if (i + BATCH_SIZE < texts.length) {
