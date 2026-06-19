@@ -8,18 +8,16 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 
 ## Features
 
-* **Optimized Single-Roundtrip Pipeline:** Every query runs in a parallelized pipeline. The second-pass Hugging Face reranker is disabled by default to cut search latency and save token costs, but can be enabled on-demand via the `ENABLE_RERANKER` feature flag.
-* **Google-Powered Discovery (SerpApi):** Capped at 20 results per search to balance precision and SerpApi monthly quota.
-* **ArcticShift Fallback & Recall Boost:** Runs in parallel with Google to supplement results from Reddit's historical archive — giving a combined pool of up to 35 top candidates per query.
-* **Organic Self-Growing Index:** Every user search triggers a background pipeline that saves fresh, high-quality Reddit posts to Pinecone. Only posts with ≥50 upvotes are persisted (up to a hard cap of 25,000 posts in the index) to protect the index storage limits.
-* **Token-Efficient Architecture:** Subsequent filter changes (All/Posts/Comments, Any Time/Recent) are performed **client-side** at zero token cost. The AI pipeline is only invoked for new queries.
-* **Client-Side Filtering:** Tab switching (All, Posts, Comments) and Time Range (Any time, Recent) filters operate purely in the browser on already-loaded results — 0 extra API calls.
-* **User Trust Signals:** Search result cards display core trust signals (subreddit tags, upvotes, relative time-ago stamps, comment counts) alongside visual source badges (`Live` vs `Semantic Index`) for complete data origin transparency.
-* **Zero-Auth Bookmark System:** Built-in client-side bookmarking with LocalStorage persistence. A sticky Bookmarks panel persists in the sidebar to keep track of curated threads.
-* **Search History Dropdown:** Access previous searches instantly via a history dropdown that floats below the search bar when focused empty.
-* **Relevance Guard:** Content marked `[removed]` is filtered from results. NSFW content is shown by default to ensure maximum result breadth.
-* **Sub-10ms Caching:** Integrates Upstash Redis to cache hybrid search results — repeat queries go from ~7000ms → <10ms.
-* **Radar Loading UX:** A premium Neural Scan animation with live status messages communicates search progress.
+* **Semantic AI Search:** Understands the actual meaning and intent behind your search query to find relevant Reddit discussions, rather than just matching exact keywords.
+* **Smart Live Updates:** Combines real-time web results with historical archives to surface the most up-to-date and accurate discussions.
+* **Organic Growing Index:** Automatically learns and grows. Whenever you search, top-quality threads are indexed and saved to build a richer library over time.
+* **Instant Client Filters:** Switch between posts, comments, or different time ranges instantly with zero lag or loading delays.
+* **Transparent Source Badges:** See exactly where search results came from (e.g., Live Search vs. Local Index) alongside metrics like upvotes, comment counts, and posting time.
+* **Zero-Auth Bookmark System:** Save and organize your favorite Reddit threads directly in a convenient sidebar without needing to sign up or log in.
+* **Quick Search History:** Access your previous search queries instantly from a clean history dropdown when focusing on the search bar.
+* **Clean Results Guard:** Automatically filters out deleted or removed posts so you only browse active, readable content.
+* **Sub-10ms Repeat Searches:** Instantly re-load any recent search in under 10ms from the local cache.
+* **Radar Scan Animation:** A premium loading scanning animation keeps you updated on search progress as results load.
 
 ---
 
@@ -164,7 +162,7 @@ All services have generous free tiers — running Redex costs $0.
 
 ---
 
-## 🧠 Token Budget & Cost & Smart Optimizations
+## Token Budget & Cost & Smart Optimizations
 
 Redex is designed to maximize free-tier AI token and API usage with built-in resource control:
 
@@ -177,7 +175,7 @@ Redex is designed to maximize free-tier AI token and API usage with built-in res
 
 With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **650+ cold Deep Scans** per month. With cache hit optimizations, this extends to **800+ searches/month**.
 
-### ⚡ Built-in Smart Optimizations:
+### Built-in Smart Optimizations:
 - **Reduced Indexer Truncation**: Bulk subreddit indexing slices text to `2,000` characters (down from `8,000`), reducing token burn by up to 75% without sacrificing vector quality.
 - **Tiered Cache TTL**: Search caching TTL matches the query frequency profile (30 minutes for `week`, 2 hours for `month`, and 24 hours for evergreen `all`/`year` queries).
 - **Reduced Google Search Cost**: SerpApi results are capped at `20` (down from `30`) to prolong the 100 free searches/month quota.
@@ -186,7 +184,7 @@ With Hugging Face's **2,000,000 free token** allowance, this gives you approxima
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 redex/
@@ -221,6 +219,6 @@ redex/
 
 ---
 
-## 🛡️ License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
