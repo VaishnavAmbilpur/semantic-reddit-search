@@ -25,8 +25,6 @@ interface SearchInputProps {
   setQuery: (q: string) => void;
   onSearch: (e?: React.FormEvent, overrideParams?: { q?: string; sort?: string; type?: string; dateRange?: string; refresh?: boolean }) => void;
   loading: boolean;
-  tokensRemaining: number;
-  searchesRemaining: number;
   searchHistory?: string[];
 }
 
@@ -36,8 +34,6 @@ const SearchInputUI = ({
   setQuery, 
   onSearch, 
   loading, 
-  tokensRemaining,
-  searchesRemaining,
   searchHistory = []
 }: SearchInputProps) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -117,15 +113,6 @@ const SearchInputUI = ({
           >
             {loading ? 'Analyzing intent...' : 'Begin scan'}
           </button>
-          
-          <div className="flex flex-col items-center text-center max-w-md w-full animate-in fade-in duration-500 delay-300">
-            <div className="flex items-center bg-neutral-900/30 backdrop-blur-md border border-neutral-800/60 px-6 py-2.5 rounded-2xl shadow-lg">
-               <div className="flex flex-col items-center min-w-[120px]">
-                 <span className="text-white font-mono font-bold text-[16px]">{searchesRemaining}</span>
-                 <span className="text-[9px] text-neutral-500 uppercase tracking-[0.2em] font-bold mt-0.5">Scans Remaining</span>
-               </div>
-            </div>
-          </div>
         </div>
       )}
     </div>
@@ -311,20 +298,10 @@ function SearchPageContent() {
   const navStackRef = useRef<string[]>([]);
 
   // Global query quota state
-  const [tokensRemaining, setTokensRemaining] = useState(2050000);
-  const [searchesRemaining, setSearchesRemaining] = useState(100);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
   // Retrieve dashboard and session metadata on mount
   useEffect(() => {
-    fetch('/api/stats')
-      .then(res => res.ok ? res.json() : { searchesRemaining: 100 })
-      .then(data => {
-        setSearchesRemaining(data.searchesRemaining);
-        setTokensRemaining(data.searchesRemaining * 5500); // Optimized estimate 5.5k tokens per search
-      })
-      .catch(() => {});
-
     const savedHistory = localStorage.getItem('redex_history');
     if (savedHistory) {
       setTimeout(() => setSearchHistory(JSON.parse(savedHistory)), 0);
@@ -336,15 +313,6 @@ function SearchPageContent() {
       const filtered = prev.filter(item => item !== q);
       const next = [q, ...filtered].slice(0, 5);
       localStorage.setItem('redex_history', JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  const deductTokens = useCallback((isCached: boolean) => {
-    if (isCached) return; 
-    setSearchesRemaining(prev => {
-      const next = Math.max(0, prev - 1);
-      setTokensRemaining(next * 5500);
       return next;
     });
   }, []);
@@ -438,7 +406,6 @@ function SearchPageContent() {
       
       if (!data.cached) {
         addToHistory(q);
-        deductTokens(false);
       }
 
     } catch (err: unknown) {
@@ -450,7 +417,7 @@ function SearchPageContent() {
       setLoading(false);
       isSearchingRef.current = false;
     }
-  }, [sort, type, dateRange, selectedSubs, router, addToHistory, deductTokens, searchParams]);
+  }, [sort, type, dateRange, selectedSubs, router, addToHistory, searchParams]);
 
   // Client-side Filter/Sort Effect (Saves Tokens)
   useEffect(() => {
@@ -646,8 +613,6 @@ function SearchPageContent() {
                 setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                tokensRemaining={tokensRemaining}
-                searchesRemaining={searchesRemaining}
                 searchHistory={searchHistory}
               />
             </div>
@@ -674,8 +639,6 @@ function SearchPageContent() {
                 setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                tokensRemaining={tokensRemaining}
-                searchesRemaining={searchesRemaining}
                 searchHistory={searchHistory}
               />
             </div>
@@ -693,8 +656,6 @@ function SearchPageContent() {
                 setQuery={setQueryAndRef} 
                 onSearch={onSearch} 
                 loading={loading} 
-                tokensRemaining={tokensRemaining}
-                searchesRemaining={searchesRemaining}
                 searchHistory={searchHistory}
               />
 
@@ -721,13 +682,7 @@ function SearchPageContent() {
                 {/* Meta Stats */}
                 <div className="flex items-center gap-6 border-b border-neutral-900 mb-6 pb-2">
                   {meta && !loading && (
-                    <div className="flex items-center gap-6 w-full justify-between">
-                      <div className="flex flex-col">
-                        <div className="flex gap-2 text-[11px] text-neutral-600 font-bold uppercase tracking-widest">
-                          <span>{searchesRemaining} Scans Remaining</span>
-                        </div>
-                      </div>
-
+                    <div className="flex items-center gap-6 w-full justify-end">
                       <span className="text-[13px] text-neutral-500">
                         {results.length} results ({meta.time}ms)
                       </span>
