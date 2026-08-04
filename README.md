@@ -13,7 +13,6 @@ What makes Redex special: **it indexes itself.** Every search automatically disc
 * **Organic Growing Index:** Automatically learns and grows. Whenever you search, top-quality threads are indexed and saved to build a richer library over time.
 * **Instant Client Filters:** Switch between posts, comments, or different time ranges instantly with zero lag or loading delays.
 * **Transparent Source Badges:** See exactly where search results came from (e.g., Live Search vs. Local Index) alongside metrics like upvotes, comment counts, and posting time.
-* **Zero-Auth Bookmark System:** Save and organize your favorite Reddit threads directly in a convenient sidebar without needing to sign up or log in.
 * **Quick Search History:** Access your previous search queries instantly from a clean history dropdown when focusing on the search bar.
 * **Clean Results Guard:** Automatically filters out deleted or removed posts so you only browse active, readable content.
 * **Sub-10ms Repeat Searches:** Instantly re-load any recent search in under 10ms from the local cache.

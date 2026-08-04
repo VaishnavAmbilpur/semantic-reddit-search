@@ -245,36 +245,7 @@ function SearchPageContent() {
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(!!searchParams.get("q"));
 
-  // Bookmarks/Saved state
-  const [savedResults, setSavedResults] = useState<SearchResult[]>([]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('redex:saved');
-    if (saved) {
-      try {
-        setSavedResults(JSON.parse(saved));
-      } catch (e) {
-        console.warn('Failed to parse bookmarks:', e);
-      }
-    }
-  }, []);
-
-  const toggleSaveResult = useCallback((result: SearchResult, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    setSavedResults(prev => {
-      const isSaved = prev.some(r => r.id === result.id);
-      let next;
-      if (isSaved) {
-        next = prev.filter(r => r.id !== result.id);
-      } else {
-        next = [result, ...prev].slice(0, 50);
-      }
-      localStorage.setItem('redex:saved', JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  // Bookmarks removed
   
   // Active filters and subset scopes
   const [sort, setSort] = useState(searchParams.get("sort") || "relevance");
@@ -676,9 +647,9 @@ function SearchPageContent() {
               )}
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-10">
-              {/* Left Column: Results */}
-              <div className="flex-1 max-w-3xl">
+            <div className="max-w-3xl mx-auto w-full">
+              {/* Results Container */}
+              <div className="w-full">
                 {/* Meta Stats */}
                 <div className="flex items-center gap-6 border-b border-neutral-900 mb-6 pb-2">
                   {meta && !loading && (
@@ -853,78 +824,8 @@ function SearchPageContent() {
                           </div>
                         </a>
 
-                        {/* Bookmark Button */}
-                        <button
-                          onClick={(e) => toggleSaveResult(r, e)}
-                          className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-950/80 border border-neutral-800/60 text-neutral-400 hover:text-white hover:scale-105 transition-all z-10"
-                          title={savedResults.some(saved => saved.id === r.id) ? "Remove Bookmark" : "Bookmark Result"}
-                        >
-                          <svg 
-                            width="14" 
-                            height="14" 
-                            fill={savedResults.some(saved => saved.id === r.id) ? "currentColor" : "none"} 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                            strokeWidth="2"
-                          >
-                            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
                       </div>
                     ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Right Column: Advanced Filters */}
-              <div className="w-full lg:w-[260px] shrink-0 space-y-6 hidden lg:block">
-                <div className="bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 rounded-3xl p-6 space-y-5">
-                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Filter Spectrum</h4>
-                  <div className="flex flex-col gap-1.5">
-                    {[
-                      { id: 'all', label: 'Any time' },
-                      { id: 'week', label: 'Recent feed' }
-                    ].map(opt => (
-                      <button 
-                        key={opt.id} 
-                        onClick={() => {
-                          setDateRange(opt.id);
-                          onSearch(undefined, { dateRange: opt.id });
-                        }} 
-                        className={`text-left text-[13px] tracking-wide px-4 py-2.5 rounded-xl transition-all duration-200 border ${dateRange === opt.id ? 'bg-white text-black font-bold border-white shadow-[0_2px_12px_rgba(255,255,255,0.15)] scale-[1.02]' : 'text-neutral-400 hover:text-white bg-transparent border-transparent hover:bg-neutral-900/40'}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {savedResults.length > 0 && (
-                  <div className="bg-neutral-900/10 backdrop-blur-sm border border-neutral-900 rounded-3xl p-6 space-y-4 animate-in fade-in duration-300">
-                    <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Bookmarks ({savedResults.length})</h4>
-                    <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
-                      {savedResults.map(saved => (
-                        <div key={saved.id} className="group/item flex flex-col gap-1 border-b border-neutral-900/60 pb-2 last:border-0 last:pb-0">
-                          <a 
-                            href={saved.url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-[12px] text-neutral-300 hover:text-white font-medium line-clamp-2 hover:underline leading-snug"
-                          >
-                            {saved.title || saved.content || 'Untitled Bookmark'}
-                          </a>
-                          <div className="flex items-center justify-between text-[10px] text-neutral-500 font-mono">
-                            <span>r/{saved.subreddit}</span>
-                            <button 
-                              onClick={(e) => toggleSaveResult(saved, e)}
-                              className="text-neutral-600 hover:text-red-400 transition-colors"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
               </div>
