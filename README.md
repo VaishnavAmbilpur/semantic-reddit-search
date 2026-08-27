@@ -1,223 +1,92 @@
 # Redex: Semantic Reddit Search Engine
 
-Redex is a premium, open-source semantic search engine built exclusively for Reddit. Unlike traditional keyword search, Redex uses **AI vector embeddings** to understand the *meaning* behind your query — surfacing hyper-specific discussions, niche opinions, and deep technical solutions across Reddit in real time.
-
-What makes Redex special: **it indexes itself.** Every search automatically discovers and persists new content, so the database grows smarter and faster purely based on what people search for — no manual curation required.
+High-performance, self-indexing semantic search engine for Reddit built on Next.js 16, Pinecone, Hugging Face embeddings, and Upstash Redis/QStash.
 
 ---
 
-## Features
+## 1. What is the Problem & How It Solves It
 
-* **Semantic AI Search:** Understands the actual meaning and intent behind your search query to find relevant Reddit discussions, rather than just matching exact keywords.
-* **Smart Live Updates:** Combines real-time web results with historical archives to surface the most up-to-date and accurate discussions.
-* **Organic Growing Index:** Automatically learns and grows. Whenever you search, top-quality threads are indexed and saved to build a richer library over time.
-* **Instant Client Filters:** Switch between posts, comments, or different time ranges instantly with zero lag or loading delays.
-* **Transparent Source Badges:** See exactly where search results came from (e.g., Live Search vs. Local Index) alongside metrics like upvotes, comment counts, and posting time.
-* **Quick Search History:** Access your previous search queries instantly from a clean history dropdown when focusing on the search bar.
-* **Clean Results Guard:** Automatically filters out deleted or removed posts so you only browse active, readable content.
-* **Sub-10ms Repeat Searches:** Instantly re-load any recent search in under 10ms from the local cache.
-* **Radar Scan Animation:** A premium loading scanning animation keeps you updated on search progress as results load.
+### The Real Problem
+* **Broken Native Reddit Search**: Reddit's search engine relies on strict keyword matching — searching *"best ANC headphones for coding"* misses top threads titled *"what headsets do you use in open offices?"* due to zero keyword overlap.
+* **The "site:reddit.com" Workaround**: Developers manually append `site:reddit.com` to Google because Reddit's search is unusable, but Google results lack semantic understanding, upvote filters, and structured metadata.
+* **The $10,000/Month Pre-Indexing Trap**: Reddit generates ~500M posts annually. Vectorizing and storing all of Reddit upfront requires massive database infrastructure ($10k+/month in vector DB costs).
 
----
-
-## How It Works
-
-```
-User searches "best mechanical keyboard"
-        │
-        ▼
-[0] Environment & Input Validation (API key guard)
-        │
-        ▼
-[1] Hugging Face: Single query embedding (shared by both lanes)
-        │
-        ┌────┴──────────────────────────────┐
-        ▼                                    ▼
-DB Lane (Pinecone)              Google + ArcticShift (Live)
-Semantic cosine search          SerpApi: top 20 Google results
-on indexed posts+comments       ArcticShift: top 15 archive posts
-                                → Merge + Deduplicate → top 35
-                                → Hugging Face embed each → cosine score
-        └────────────┬─────────────────────┘
-                     ▼
-   Merge + deduplicate (ID-based)
-   Sort: Upvotes → Similarity
-                     │
-                     ▼
-    (Hugging Face Reranker Pass 2 is bypassed by default to keep search instant)
-                     │
-                     ▼
-             Return results to user
-                    │
-                    ▼ (background — after response sent)
-   QStash → persist-live worker
-     → Redis Dedup Cache check (skips Pinecone fetch if ID already indexed)
-     → Filter: only posts with ≥50 upvotes saved to Pinecone (up to 25K total posts)
-     → Trigger ArcticShift full index for new subreddits
-```
-
-The next time someone searches the same topic, it's instant from cache (<10ms), and the index has already grown with newly discovered communities.
+### The Real Solution
+* **Zero-Touch Self-Indexing Engine**: Redex starts with zero pre-indexed data; it performs live web discovery (SerpApi + ArcticShift) on user searches and automatically indexes discovered quality threads into Pinecone in the background.
+* **Semantic Vector Intent Matching**: Vectorizes queries into 768-dimensional embedding space (`BAAI/bge-base-en-v1.5`), finding relevant discussions based on actual meaning and technical context rather than exact words.
+* **Recycled Embedding Persistence**: Embeddings generated during live search are passed inside async QStash background payloads, persisting vectors to Pinecone with **zero additional AI token overhead**.
 
 ---
 
-## Technology Stack
+## 2. Flow of Execution
 
-| Layer | Technology |
-|---|---|
-| Framework | [Next.js 16 (App Router)](https://nextjs.org/) |
-| Vector Database | [Pinecone](https://pinecone.io/) |
-| AI Embeddings | [Hugging Face](https://huggingface.co/) `BAAI/bge-base-en-v1.5` (768 dims) |
-| AI Reranking | Hugging Face Reranker (Disabled by default; toggleable via ENABLE_RERANKER) |
-| Google Search | [SerpApi](https://serpapi.com/) `site:reddit.com` strategy |
-| Message Queue | [Upstash QStash](https://upstash.com/) |
-| Caching & Metadata | [Upstash Redis](https://upstash.com/) |
-| Bulk Indexing | [Arctic Shift API](https://arctic-shift.photon-reddit.com) — no credentials |
-| Styling | Vanilla CSS + Tailwind (Neutral-950 Dark Premium) |
+```mermaid
+flowchart TD
+    A[Client Request: GET /api/search?q=...] --> B[Validate Input & Rate Limit: 20 req/day per IP]
+    B --> C{Check Redis Cache}
+    C -->|Cache Hit| D[Return Cached Payload <10ms]
+    C -->|Cache Miss| E[Parallel Execution Pipeline]
 
----
+    subgraph E [Parallel Execution Pipeline]
+        E1[Check Redis Query Embedding Cache / Call Hugging Face API]
+        E2[Fetch Live Candidates: SerpApi + ArcticShift API]
+        E3[Query Pinecone Vector Database]
+    end
 
-## Local Development Setup
+    E1 --> F[Compute Cosine Similarity Scores]
+    E2 --> F
+    E3 --> F
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/yourusername/redex.git
-cd redex
-npm install
-```
+    F --> G[Merge & Deduplicate Results by Reddit ID]
+    G --> H{ENABLE_RERANKER Enabled?}
+    H -->|True & Top Similarity < 0.75| I[Pass Top 10 to Cross-Encoder Reranker]
+    H -->|False / High Similarity| J[Final Rank & Return Response]
+    I --> J
 
-### 2. Configure Environment Variables
-Copy the example environment file and fill in your API keys. **Do not wrap values in quotes.**
-```env
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX=your_pinecone_index_name
-SERPAPI_API_KEY=your_serpapi_key
-HF_API_KEY=your_jina_key
-UPSTASH_REDIS_REST_URL=https://...
-UPSTASH_REDIS_REST_TOKEN=...
-QSTASH_TOKEN=...
-QSTASH_CURRENT_SIGNING_KEY=...
-QSTASH_NEXT_SIGNING_KEY=...
-APP_URL=https://your-deployment-url.vercel.app
-```
+    J --> K[Async QStash Background Trigger]
 
-### 3. Start the Development Server
-```bash
-npm run dev
-```
-Navigate to `http://localhost:3000` to use the search engine.
-
-> **Note:** The live lane and background persistence work immediately with no pre-indexed data — Redex produces results on day one.
-
-> **QStash local testing:** QStash cannot reach `localhost`. Use [ngrok](https://ngrok.com/) and set `APP_URL` to your ngrok tunnel URL for the `persist-live` background worker to function locally.
-
----
-
-## Environment Variables
-
-All services have generous free tiers — running Redex costs $0.
-
-| Variable | Where to get it | Purpose |
-|---|---|---|
-| `PINECONE_API_KEY` | [Pinecone Console](https://app.pinecone.io/) | Pinecone API key |
-| `PINECONE_INDEX` | [Pinecone Console](https://app.pinecone.io/) | Pinecone index name |
-| `SERPAPI_API_KEY` | [serpapi.com](https://serpapi.com) | Google Search via SerpApi (100 free searches/month) |
-| `HF_API_KEY` | [huggingface.co](https://huggingface.co) | Hugging Face embeddings + reranking (2M free tokens) |
-| `UPSTASH_REDIS_REST_URL` | [upstash.com](https://upstash.com) | Redis REST endpoint |
-| `UPSTASH_REDIS_REST_TOKEN` | [upstash.com](https://upstash.com) | Redis REST token |
-| `QSTASH_TOKEN` | [upstash.com](https://upstash.com) | QStash publish token |
-| `QSTASH_CURRENT_SIGNING_KEY` | [upstash.com](https://upstash.com) | QStash webhook verification |
-| `QSTASH_NEXT_SIGNING_KEY` | [upstash.com](https://upstash.com) | QStash webhook fallback key |
-| `APP_URL` | Your deployment URL | Required for QStash to call your workers |
-
-> **Important:** Do not wrap any environment variable value in double quotes in your `.env` file or in the Vercel dashboard.
-
----
-
-## API Overview
-
-### Public (no auth required)
-| Endpoint | Description |
-|---|---|
-| `GET /api/search?q=...` | Deep Scan search — Google + ArcticShift + Hugging Face Rerank, merged and ranked |
-| `GET /api/search?q=...&refresh=true` | Force a fresh live scan, bypassing cache |
-| `GET /api/subreddits` | List all indexed subreddits |
-
-### Search Query Parameters
-| Parameter | Default | Description |
-|---|---|---|
-| `q` | *(required)* | Search query (min 2 chars) |
-| `sort` | `relevance` | `relevance` or `top` |
-| `type` | `all` | `all`, `post`, or `comment` |
-| `dateRange` | `all` | `all`, `week`, `month`, or `year` |
-| `minUpvotes` | `0` | Minimum upvote filter |
-| `refresh` | `false` | Bypass Redis cache |
-
-> **Client-Side Note:** `type` and `dateRange` filtering after the first search is done purely in the browser at zero token cost. Only new `q` values trigger a new API call.
-
-### Workers (called by QStash only)
-| Endpoint | Description |
-|---|---|
-| `POST /api/worker/persist-live` | Saves live search results (≥50 upvotes, capped at 25K total posts) to Pinecone |
-
----
-
-## Token Budget & Cost & Smart Optimizations
-
-Redex is designed to maximize free-tier AI token and API usage with built-in resource control:
-
-| Operation | Estimated Token Cost |
-|---|---|
-| Query Embedding (Hugging Face) | ~50 tokens (24h cache-backed) |
-| Live Post Embeddings (15 posts × ~200 tokens) | ~3,000 tokens |
-| Hugging Face Reranking (Toggleable feature flag) | 0 tokens (Default: disabled) |
-| **Total per Deep Scan** | **~3,050 tokens** |
-
-With Hugging Face's **2,000,000 free token** allowance, this gives you approximately **650+ cold Deep Scans** per month. With cache hit optimizations, this extends to **800+ searches/month**.
-
-### Built-in Smart Optimizations:
-- **Reduced Indexer Truncation**: Bulk subreddit indexing slices text to `2,000` characters (down from `8,000`), reducing token burn by up to 75% without sacrificing vector quality.
-- **Tiered Cache TTL**: Search caching TTL matches the query frequency profile (30 minutes for `week`, 2 hours for `month`, and 24 hours for evergreen `all`/`year` queries).
-- **Reduced Google Search Cost**: SerpApi results are capped at `20` (down from `30`) to prolong the 100 free searches/month quota.
-- **Redis Deduplication Cache**: The background worker performs a fast check against `pinecone:indexed_ids` in Redis before triggering Pinecone fetch operations.
-- **Reranker Feature Flag**: Toggle second-pass reranking on/off via `ENABLE_RERANKER` inside your environment variables.
-
----
-
-## Project Structure
-
-```
-redex/
-└── src/
-    ├── app/
-    │   ├── page.tsx             # Search UI (landing → results, client-side filtering)
-    │   └── api/
-    │       ├── search/          # Deep Scan orchestrator (Google + ArcticShift + Hugging Face)
-    │       ├── subreddits/      # Public subreddit list
-    │       └── worker/
-    │           └── persist-live/      # Organic Index saver (upvote-filtered)
-    │
-    └── lib/
-        ├── arcticShift.ts       # Arctic Shift historical archive client (15s timeout)
-        ├── googleSearch.ts      # SerpApi Google search client (site:reddit.com)
-        ├── search.ts            # mergeAndRank(), vectorSearch()
-        ├── embeddings.ts        # Hugging Face embedding + reranking client (with console logs)
-        ├── cache.ts             # Redis cache helpers
-        ├── pinecone.ts          # Pinecone client configuration (lazy)
-        ├── redis.ts             # Redis singleton
-        └── qstash.ts            # QStash client + signature verification
+    subgraph K [Background Worker: /api/worker/persist-live]
+        K1[Verify QStash Signature]
+        K2[Filter Posts: Upvotes ≥ 50 & Deduplicate via Redis Set]
+        K3[Upsert Recycled Vectors to Pinecone - 25k Cap]
+    end
 ```
 
 ---
 
-## Deployment Checklist (Vercel + Pinecone)
+## 3. Important Architectural Tradeoffs
 
-1. **Add all environment variables** to Vercel dashboard (no quotes around values)
-2. **Set `APP_URL`** to your Vercel deployment URL (e.g. `https://redex.vercel.app`)
-3. **Build test:** Run `npm run build` locally before deploying — must exit with code 0
-4. **QStash:** Update your QStash allowed domains to include your Vercel URL
+* **On-Demand Web Discovery vs. Pre-Indexed Vector DB**
+  * *Tradeoff*: Accepts ~1-2s cold-search latency for un-indexed topics to eliminate millions in ingestion costs, achieving zero-cost infinite Reddit coverage.
+* **Embedding Payload Recycling vs. Worker Re-Vectorization**
+  * *Tradeoff*: Ships computed vector arrays (~3KB) directly inside QStash background payloads to eliminate redundant Hugging Face AI API calls during DB persistence.
+* **Bi-Encoder Cosine Retrieval vs. Heavy Cross-Encoder Reranking**
+  * *Tradeoff*: Uses single-pass vector similarity by default to guarantee sub-500ms queries, bypassing expensive cross-encoder reranking unless similarity falls below 0.75.
 
 ---
 
-## License
+## 4. How Would You Scale It
 
-Distributed under the MIT License. See `LICENSE` for more information.
+* **Dedicated Text Embeddings Inference (TEI) Cluster**
+  * Replace external Hugging Face API bottlenecks with a self-hosted HuggingFace TEI container on GPU (Modal / RunPod), dropping vector generation latency from ~300ms to <15ms.
+* **Subreddit-Clustered Vector Sharding**
+  * Partition Pinecone indexes into domain-specific vector namespaces (`tech`, `finance`, `gaming`) to maintain flat ANN search latency as vector count scales past 10M+.
+* **Real-Time Pushshift Firehose Ingestion**
+  * Transition from pull-based web discovery (SerpApi) to continuous Pushshift / Reddit WebSocket firehose streaming for real-time background vectorization of top subreddits.
+
+---
+
+## Quick Reference
+
+### Tech Stack
+* **Framework**: Next.js 16 (App Router)
+* **Vector Database**: Pinecone Serverless
+* **AI Embeddings**: Hugging Face (`BAAI/bge-base-en-v1.5` - 768 dims)
+* **Live Search**: SerpApi (`site:reddit.com`) + ArcticShift API
+* **Caching & Queues**: Upstash Redis + Upstash QStash
+
+### Local Development Setup
+1. `git clone https://github.com/yourusername/redex.git && cd redex`
+2. `npm install`
+3. Configure `.env` with `PINECONE_API_KEY`, `PINECONE_INDEX`, `SERPAPI_API_KEY`, `HF_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `QSTASH_TOKEN`, `APP_URL`.
+4. `npm run dev`
