@@ -1,26 +1,23 @@
-import { Pinecone, Index } from '@pinecone-database/pinecone';
+import { Pinecone } from "@pinecone-database/pinecone";
 
-const globalForPinecone = globalThis as unknown as { 
-  pinecone?: Pinecone;
-  pineconeIndex?: Index;
-};
+const globalForPinecone = globalThis;
 
-function getPineconeClient(): Pinecone {
+function getPineconeClient() {
   if (!globalForPinecone.pinecone) {
     const apiKey = process.env.PINECONE_API_KEY;
     if (!apiKey) {
-      throw new Error('PINECONE_API_KEY environment variable is not defined.');
+      throw new Error("PINECONE_API_KEY environment variable is not defined.");
     }
     globalForPinecone.pinecone = new Pinecone({ apiKey });
   }
   return globalForPinecone.pinecone;
 }
 
-export function getPineconeIndex(): Index {
+export function getPineconeIndex() {
   if (!globalForPinecone.pineconeIndex) {
     const indexName = process.env.PINECONE_INDEX;
     if (!indexName) {
-      throw new Error('PINECONE_INDEX environment variable is not defined.');
+      throw new Error("PINECONE_INDEX environment variable is not defined.");
     }
     const client = getPineconeClient();
     globalForPinecone.pineconeIndex = client.index(indexName);
@@ -28,24 +25,7 @@ export function getPineconeIndex(): Index {
   return globalForPinecone.pineconeIndex;
 }
 
-export interface PineconeRecord {
-  id: string;
-  values: number[];
-  metadata: {
-    type: 'post' | 'comment';
-    title?: string;
-    content?: string;
-    url: string;
-    upvotes: number;
-    commentCount: number;
-    author: string;
-    subreddit: string;
-    redditCreatedAt: number; // Unix timestamp in seconds
-    isNsfw: boolean;
-  };
-}
-
-export async function upsertVectors(records: PineconeRecord[]) {
+export async function upsertVectors(records) {
   const index = getPineconeIndex();
   // Pinecone recommends upserting in batches of 100 or less
   const batchSize = 100;
@@ -55,18 +35,8 @@ export async function upsertVectors(records: PineconeRecord[]) {
   }
 }
 
-export interface QueryOptions {
-  topK: number;
-  filter?: {
-    type?: string;
-    minUpvotes?: number;
-    subreddits?: string[];
-    dateRange?: string;
-  };
-}
-
-export async function queryVectors(vector: number[], options: QueryOptions) {
-  const filter: any = {};
+export async function queryVectors(vector, options) {
+  const filter = {};
   const optsFilter = options.filter || {};
 
   if (optsFilter.minUpvotes && optsFilter.minUpvotes > 0) {
@@ -77,17 +47,18 @@ export async function queryVectors(vector: number[], options: QueryOptions) {
     filter.subreddit = { $in: optsFilter.subreddits };
   }
 
-  if (optsFilter.type && optsFilter.type !== 'all') {
+  if (optsFilter.type && optsFilter.type !== "all") {
     filter.type = { $eq: optsFilter.type };
   }
 
-  if (optsFilter.dateRange && optsFilter.dateRange !== 'all') {
+  if (optsFilter.dateRange && optsFilter.dateRange !== "all") {
     const now = new Date();
     const startDate = new Date();
-    if (optsFilter.dateRange === 'week') startDate.setDate(now.getDate() - 7);
-    else if (optsFilter.dateRange === 'month') startDate.setMonth(now.getMonth() - 1);
-    else if (optsFilter.dateRange === 'year') startDate.setFullYear(now.getFullYear() - 1);
-    
+    if (optsFilter.dateRange === "week") startDate.setDate(now.getDate() - 7);
+    else if (optsFilter.dateRange === "month")
+      startDate.setMonth(now.getMonth() - 1);
+    else if (optsFilter.dateRange === "year")
+      startDate.setFullYear(now.getFullYear() - 1);
     filter.redditCreatedAt = { $gte: Math.floor(startDate.getTime() / 1000) };
   }
 
