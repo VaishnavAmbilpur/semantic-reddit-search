@@ -22,10 +22,13 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
   // 0. Environment & Input Validation
-  if (
-    !(process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY) ||
-    !process.env.SERPAPI_API_KEY
-  ) {
+  const hasAIProvider =
+    (process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN) &&
+    (process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CF_ACCOUNT_ID)
+      ? true
+      : !!(process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY);
+
+  if (!hasAIProvider || !process.env.SERPAPI_API_KEY) {
     console.error("[Search] Deployment Error: Missing API Keys in Environment");
     return Response.json(
       { error: "System Configuration Error: Missing API Keys" },

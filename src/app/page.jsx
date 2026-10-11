@@ -149,18 +149,22 @@ function parseError(raw) {
       retryLabel: "Try Again",
     };
   }
+  // Credits exhausted (HF 402, Cloudflare billing, Jina balance)
   if (
+    r.includes("402") ||
+    r.includes("payment required") ||
     r.includes("jina_no_balance") ||
     r.includes("insufficient account balance") ||
     r.includes("authz_insufficient_balance") ||
-    r.includes("hf_no_balance")
+    r.includes("hf_no_balance") ||
+    r.includes("credits")
   ) {
     return {
       icon: "💳",
-      title: "Hugging Face limit reached",
+      title: "AI service credits exhausted",
       message:
         "The AI embedding service ran out of credits. Search is temporarily unavailable.",
-      hint: "The site owner needs to verify the Hugging Face account status.",
+      hint: "The site owner needs to check the AI provider billing or switch providers.",
       retryable: false,
     };
   }
@@ -174,24 +178,28 @@ function parseError(raw) {
       retryable: false,
     };
   }
+  // Authentication failures (HF 401, Cloudflare auth, Jina bad key)
   if (
+    r.includes("401") ||
+    r.includes("unauthorized") ||
     r.includes("jina_bad_key") ||
     r.includes("jina_auth_error") ||
     r.includes("invalid_token") ||
-    r.includes("hf_bad_key")
+    r.includes("hf_bad_key") ||
+    r.includes("credentials missing")
   ) {
     return {
       icon: "🔑",
       title: "AI service authentication failed",
-      message: "The Hugging Face API key is invalid or expired.",
-      hint: "The site owner needs to update the HUGGING_FACE_API_KEY environment variable.",
+      message: "The AI embedding API key is invalid, expired, or missing.",
+      hint: "The site owner needs to update the API credentials in the environment variables.",
       retryable: false,
     };
   }
   if (
     r.includes("jina") ||
     r.includes("huggingface") ||
-    r.includes("hf") ||
+    r.includes("cloudflare ai") ||
     r.includes("embedding") ||
     r.includes("429")
   ) {
