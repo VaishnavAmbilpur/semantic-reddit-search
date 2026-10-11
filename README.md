@@ -1,6 +1,6 @@
 # Redex: Semantic Reddit Search Engine
 
-High-performance, self-indexing semantic search engine for Reddit built on Next.js 16, Pinecone, Hugging Face embeddings, and Upstash Redis/QStash.
+High-performance, self-indexing semantic search engine for Reddit built on Next.js 16, Pinecone, Cloudflare Workers AI embeddings, and Upstash Redis/QStash.
 
 ---
 
@@ -28,7 +28,7 @@ flowchart TD
     C -->|Cache Miss| E[Parallel Execution Pipeline]
 
     subgraph E [Parallel Execution Pipeline]
-        E1[Check Redis Query Embedding Cache / Call Hugging Face API]
+        E1[Check Redis Query Embedding Cache / Call Cloudflare Workers AI]
         E2[Fetch Live Candidates: SerpApi + ArcticShift API]
         E3[Query Pinecone Vector Database]
     end
@@ -59,7 +59,7 @@ flowchart TD
 * **On-Demand Web Discovery vs. Pre-Indexed Vector DB**
   * *Tradeoff*: Accepts ~1-2s cold-search latency for un-indexed topics to eliminate millions in ingestion costs, achieving zero-cost infinite Reddit coverage.
 * **Embedding Payload Recycling vs. Worker Re-Vectorization**
-  * *Tradeoff*: Ships computed vector arrays (~3KB) directly inside QStash background payloads to eliminate redundant Hugging Face AI API calls during DB persistence.
+  * *Tradeoff*: Ships computed vector arrays (~3KB) directly inside QStash background payloads to eliminate redundant AI API calls during DB persistence.
 * **Bi-Encoder Cosine Retrieval vs. Heavy Cross-Encoder Reranking**
   * *Tradeoff*: Uses single-pass vector similarity by default to guarantee sub-500ms queries, bypassing expensive cross-encoder reranking unless similarity falls below 0.75.
 
@@ -68,7 +68,7 @@ flowchart TD
 ## 4. How Would You Scale It
 
 * **Dedicated Text Embeddings Inference (TEI) Cluster**
-  * Replace external Hugging Face API bottlenecks with a self-hosted HuggingFace TEI container on GPU (Modal / RunPod), dropping vector generation latency from ~300ms to <15ms.
+  * Replace external API bottlenecks with a self-hosted HuggingFace TEI container on GPU (Modal / RunPod), dropping vector generation latency from ~300ms to <15ms.
 * **Subreddit-Clustered Vector Sharding**
   * Partition Pinecone indexes into domain-specific vector namespaces (`tech`, `finance`, `gaming`) to maintain flat ANN search latency as vector count scales past 10M+.
 * **Real-Time Pushshift Firehose Ingestion**
@@ -81,12 +81,12 @@ flowchart TD
 ### Tech Stack
 * **Framework**: Next.js 16 (App Router)
 * **Vector Database**: Pinecone Serverless
-* **AI Embeddings**: Hugging Face (`BAAI/bge-base-en-v1.5` - 768 dims)
+* **AI Embeddings**: Cloudflare Workers AI (`@cf/baai/bge-base-en-v1.5` - 768 dims) — Hugging Face fallback
 * **Live Search**: SerpApi (`site:reddit.com`) + ArcticShift API
 * **Caching & Queues**: Upstash Redis + Upstash QStash
 
 ### Local Development Setup
 1. `git clone https://github.com/yourusername/redex.git && cd redex`
 2. `npm install`
-3. Configure `.env` with `PINECONE_API_KEY`, `PINECONE_INDEX`, `SERPAPI_API_KEY`, `HF_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `QSTASH_TOKEN`, `APP_URL`.
+3. Configure `.env` with `PINECONE_API_KEY`, `PINECONE_INDEX`, `SERPAPI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `QSTASH_TOKEN`, `APP_URL`.
 4. `npm run dev`
